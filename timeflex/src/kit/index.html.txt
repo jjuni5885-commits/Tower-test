@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>타임플렉스 적 원화 키트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* 시간 침략자의 푸른 균열을 먹빛 바탕 위 포인트로, 청동은 보조. 카드 목록을 위에서 아래로 훑고 복사 단추만 누르는 한 줄 배치 */
+  --bg: #f3efe6;
+  --panel: #ffffff;
+  --ink: #1d1b22;
+  --soft: #4a4552;
+  --crack: #0f8fa3;
+  --bronze: #a2672a;
+  --line: #ddd3c2;
+  --done: #e7f3f4;
+  --display: "Black Han Sans", "Noto Sans KR", sans-serif;
+  --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #16141b; --panel: #211e28; --ink: #f1ece4; --soft: #c9c1d4; --crack: #45d6ea; --bronze: #e0a25c; --line: #3a3544; --done: #1b3036; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #16141b; --panel: #211e28; --ink: #f1ece4; --soft: #c9c1d4; --crack: #45d6ea; --bronze: #e0a25c; --line: #3a3544; --done: #1b3036; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); line-height: 1.6; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 28px; }
+h1, h2 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; letter-spacing: 0.5px; }
+h1 span { color: var(--crack); }
+h2 { font-size: 21px; border-bottom: 3px solid var(--crack); padding-bottom: 4px; }
+.lead { margin: 6px 0 0; color: var(--soft); }
+ol.how { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+.note { background: var(--panel); border-left: 4px solid var(--bronze); padding: 12px 14px; border-radius: 6px; }
+.sec { display: grid; gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.card.done { background: var(--done); border-color: var(--crack); }
+.head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.no { font-family: var(--display); font-size: 20px; color: var(--bronze); min-width: 34px; font-variant-numeric: tabular-nums; }
+.name { font-weight: 700; font-size: 17px; }
+.tag { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--soft); }
+.tag.boss { border-color: var(--bronze); color: var(--bronze); font-weight: 700; }
+.acts { margin-left: auto; display: flex; gap: 8px; }
+button { font: inherit; font-weight: 700; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 2px solid var(--crack); background: var(--crack); color: #fff; }
+button.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+button:focus-visible { outline: 3px solid var(--bronze); outline-offset: 2px; }
+details summary { cursor: pointer; color: var(--soft); font-size: 14px; }
+pre { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.5; background: var(--bg); border-radius: 6px; padding: 10px; margin: 8px 0 0; }
+.ok { font-size: 13px; color: var(--crack); font-weight: 700; min-height: 1em; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: background 0.2s; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>타임플렉스 <span>적 원화</span> 키트</h1>
+  <p class="lead">제미나이에 붙여 넣을 적 그림 프롬프트 30개. 한 장에 같은 적의 앞, 뒤, 옆 모습이 나오고, 게임이 걷는 방향에 맞춰 골라 씁니다.</p>
+</header>
+
+<section class="sec">
+  <h2>뽑는 법</h2>
+  <ol class="how">
+    <li>제미나이 앱에서 <b>적마다 새 대화</b>를 엽니다(앞 그림이 섞이지 않게).</li>
+    <li>카드의 <b>복사</b>를 눌러 프롬프트를 그대로 붙여 넣고 보냅니다.</li>
+    <li>세 모습이 한 줄로, 단색 배경 위에 나왔는지 봅니다. 아니면 "다시 그려 줘"로 한 번 더.</li>
+    <li>마음에 들면 <b>원본 크기로 다운로드</b>해서 Claude 대화에 올리거나 PC 다운로드 폴더 안 <b>타임플렉스_적그림</b> 폴더에 모읍니다. 파일 이름은 그대로 둬도 됩니다.</li>
+    <li>다 뽑은 카드는 <b>뽑음</b>을 눌러 표시해 두세요(이 기기에만 기억).</li>
+  </ol>
+  <div class="note">먼저 <b>1차 시험 3장</b>(사람, 짐승 우두머리, 탈것)만 뽑아 올려 주세요. 게임에 넣어 크기와 걷는 느낌을 맞춘 뒤 나머지 27장을 뽑으면 다시 뽑을 일이 줄어듭니다. 오른쪽 아래 반짝이 표시는 Claude가 지웁니다.</div>
+</section>
+
+<section class="sec" id="test"><h2>1차 시험 3장</h2></section>
+<section class="sec" id="rest"><h2>나머지 27장 (장 순서)</h2></section>
+</main>
+
+<script>
+var STYLE = "STYLE: menacing stylized cartoon art for a mobile strategy game. Thick dark ink outlines, cel shading with two shadow tones, strong readable silhouette, exaggerated heavy proportions, aggressive forward-leaning stance, scars, dents and grime, rich dark saturated colors. Threatening, not cute, not chibi, no smiling.";
+var RULES = "DO NOT add any text, letters, numbers, labels, logos, flags, national emblems, insignia, religious symbols, frames or borders.";
+function bg(c) { return c === 'g'
+  ? "BACKGROUND: one flat solid pure green (#00FF00) color over the whole image. No ground, no cast shadow, no gradient, no scenery, no other objects."
+  : "BACKGROUND: one flat solid pure magenta (#FF00FF) color over the whole image. No ground, no cast shadow, no gradient, no scenery, no other objects."; }
+var MOVE = {
+  walk: ['walking toward the viewer', 'walking away from the viewer', 'facing right, walking to the right in mid-stride', 'feet on the same baseline'],
+  crawl: ['crawling toward the viewer', 'crawling away from the viewer', 'facing right, crawling to the right', 'bodies resting on the same baseline'],
+  drive: ['driving toward the viewer', 'driving away from the viewer', 'facing right, driving to the right', 'tracks or wheels on the same baseline'],
+  sail: ['sailing toward the viewer', 'sailing away from the viewer', 'facing right, sailing to the right', 'hull bottoms on the same flat line (draw only the part above an invisible waterline, no water)'],
+  fly: ['flying toward the viewer', 'flying away from the viewer', 'facing right, flying to the right', 'all at the same height']
+};
+function prompt(e) {
+  var m = MOVE[e.m], eye = e.mach ? 'glowing red lights and viewports' : 'glowing red eyes';
+  return [
+    "Create ONE wide 16:9 image: a game sprite sheet.",
+    "",
+    "SUBJECT: " + e.d + " It is a time invader: glowing cyan crack lines like shattered glass run across its " + (e.mach ? 'armor plates' : 'armor and skin') + ". It has " + eye + ".",
+    "",
+    "LAYOUT: show this exact same " + (e.mach ? 'machine' : 'character') + " three times in one row, evenly spaced with wide empty gaps between them, same size, same colors, same equipment, " + m[3] + ":",
+    "1. LEFT: front view, " + m[0],
+    "2. MIDDLE: back view, " + m[1],
+    "3. RIGHT: side view, " + m[2],
+    "Camera slightly above, about 30 degrees down, like a mobile tower defense game. The whole body is visible in every view, nothing cut off.",
+    "",
+    STYLE,
+    "",
+    bg(e.bg),
+    "",
+    RULES
+  ].join("\n");
+}
+// 키는 게임 안 적 키(Claude가 그림을 넣을 때 씀)
+var EN = [
+  { t: 1, k: 'caveman', n: '시간 부족 전사', c: '1장 원시의 들판', m: 'walk', d: 'A hunched, muscular primitive tribal warrior: wild dark hair, fur loincloth and fur shoulder wrap, bone necklace, red war paint across the face, a huge spiked wooden club, bare feet, snarling.' },
+  { t: 1, k: 'mammothKing', n: '거대 매머드 왕', c: '1장 원시의 들판', b: 1, m: 'walk', d: 'A colossal woolly mammoth king: shaggy dark brown fur, enormous cracked ivory tusks bound with bone rings, a crown of bones and teeth on its head, tribal war paint, battle scars, steaming breath, massive and heavy.' },
+  { t: 1, k: 'tr_landship', n: '육상 전함', c: '9장 참호의 시대', b: 1, m: 'drive', mach: 1, d: 'An early twentieth-century rhomboid landship tank: massive riveted steel hull, caterpillar tracks running around the whole body, cannon sponsons on both sides, mud-splattered olive steel, black exhaust smoke.' },
+  { k: 'eg_pharaoh', n: '저주받은 파라오', c: '2장 황금 사막의 강', b: 1, m: 'walk', d: 'An undead cursed pharaoh: towering gaunt mummified body in torn bandages, gold and dark blue striped royal headdress, golden broad collar, a curved bronze sickle-sword in one hand and a crook in the other, scarab beetles crawling on him.' },
+  { k: 'eg_spear', n: '사막 창병', c: '2장 황금 사막의 강', m: 'walk', d: 'An ancient desert spearman: striped blue and gold head cloth, bronze scale vest, white linen kilt, a long bronze-tipped spear held forward, small round leather shield, sandals, lean and menacing.' },
+  { k: 'ro_tyrant', n: '폭군 황제', c: '3장 대리석 제국', b: 1, m: 'drive', d: 'A tyrant emperor riding a heavy war chariot pulled by two armored black horses: a huge brutish emperor in a golden muscle cuirass, purple cape and golden laurel crown, raising a golden short sword; the chariot has spiked wheels.' },
+  { k: 'ro_legion', n: '방패 군단병', c: '3장 대리석 제국', m: 'walk', d: 'An ancient imperial legionary: iron helmet with a red crest, segmented iron armor, a huge curved rectangular red shield held in front with a plain lightning-bolt pattern, a short sword, heavy marching stance.' },
+  { k: 'tk_general', n: '천하무적 맹장', c: '4장 붉은 강의 결전', b: 1, m: 'walk', d: 'A fearsome ancient eastern warlord general: giant and broad, long black beard, heavy dark lamellar armor with red cords, a war helmet with long pheasant feathers, a massive crescent-bladed glaive held high, red cape.' },
+  { k: 'tk_spear', n: '창병', c: '4장 붉은 강의 결전', m: 'walk', d: 'An ancient eastern spearman foot soldier: brown lamellar vest, red headband, cloth trousers wrapped at the shins, a very long spear held low and forward.' },
+  { k: 'nr_giant', n: '서리 거인 왕', c: '5장 얼음 바다의 약탈자', b: 1, m: 'walk', d: 'A frost giant king: towering, pale icy blue skin, frozen white beard with icicles, iron crown, fur cloak, a gigantic ice-covered double-bladed axe, frost breath.' },
+  { k: 'nr_raider', n: '약탈자', c: '5장 얼음 바다의 약탈자', m: 'walk', d: 'A northern sea raider: round iron helmet with a nose guard (no horns), braided red beard, chainmail over a fur tunic, a round painted wooden shield, a bearded axe, roaring.' },
+  { k: 'ca_giant', n: '강철 거인 기사', c: '6장 성벽의 시대', b: 1, m: 'walk', d: 'A colossal giant knight in frost-covered steel plate armor: pale blue-white ice crystals growing from the armor, a great helm with a glowing visor slit, a huge frozen greatsword, cold mist around the feet.' },
+  { k: 'ca_foot', n: '창 보병', c: '6장 성벽의 시대', m: 'walk', d: 'A medieval foot soldier: chainmail coat, iron kettle helmet, padded tunic, a tall pike, a dented round shield on the back, grim scarred face.' },
+  { k: 'sa_kraken', n: '크라켄', c: '7장 대항해의 바다', b: 1, m: 'crawl', bg: 'g', d: 'A giant kraken sea monster dragging itself forward on land: huge dark red octopus head with one great eye, many thick tentacles with suckers, barnacles and broken ship planks stuck to its body.' },
+  { k: 'sa_pirate', n: '해적', c: '7장 대항해의 바다', m: 'walk', d: 'A pirate cutthroat: tricorn hat, eyepatch, scarred face with stubble, ragged long coat, striped shirt, a curved cutlass, a pistol in the belt, gold earring.' },
+  { k: 'jo_imugi', n: '이무기', c: '8장 조선의 바다와 성', b: 1, m: 'crawl', d: 'A huge serpent-dragon that is not yet a full dragon (no wings, no legs): long thick body with dark green and black scales, a horned serpent head with long whiskers, ink-black storm mist curling around it.' },
+  { k: 'jo_raider', n: '바다 약탈자', c: '8장 조선의 바다와 성', m: 'walk', d: 'A sea raider bandit: dark rough clothes, cloth headband, bare muscular arms, a long curved sword held in both hands, straw sandals, fierce face.' },
+  { k: 'tr_rifle', n: '돌격 보병', c: '9장 참호의 시대', m: 'walk', d: 'A trench assault soldier: round steel helmet, gas mask with round glass eyes, long muddy greatcoat, rifle with fixed bayonet, ammunition pouches, charging.' },
+  { k: 'st_super', n: '초중전차', c: '10장 철의 해안', b: 1, m: 'drive', mach: 1, d: 'A super-heavy tank: enormous blocky dark grey hull, two turrets each with a long heavy cannon, wide tracks, thick riveted armor plates with battle damage.' },
+  { k: 'st_rifle', n: '상륙 보병', c: '10장 철의 해안', m: 'walk', d: 'A landing infantry soldier: helmet with netting, field uniform, life vest, rifle with bayonet, backpack, pushing forward aggressively.' },
+  { k: 'wi_fortress', n: '공중 요새', c: '11장 얼어붙은 고지', b: 1, m: 'fly', mach: 1, d: 'A huge four-engine flying fortress bomber: thick fuselage, glass nose, gun turrets, spinning propellers, open bomb bay, dark steel covered in frost.' },
+  { k: 'wi_rifle', n: '설원 보병', c: '11장 얼어붙은 고지', m: 'walk', d: 'A winter infantry soldier: white snow camouflage parka with hood, fur hat, goggles, scarf over the face, rifle, heavy boots.' },
+  { k: 'ju_gunship', n: '강의 포함', c: '12장 정글 강', b: 1, m: 'sail', mach: 1, d: 'An armored river gunboat: low dark green steel hull, a gun turret at the bow, heavy machine guns, sandbags on deck, a small helicopter pad at the stern.' },
+  { k: 'ju_rifle', n: '정글 보병', c: '12장 정글 강', m: 'walk', d: 'A jungle soldier: wide-brim bush hat, camouflage uniform, face paint, rifle, leaves tucked into the gear, low crouching run.' },
+  { k: 'du_king', n: '사막의 강철 왕', c: '13장 모래 폭풍', b: 1, m: 'drive', mach: 1, d: 'A gigantic desert tank king: sand-colored massive tank with a huge main gun, a spiked dozer blade, armor skirts, a crown-shaped commander cupola, dust trailing behind.' },
+  { k: 'du_rifle', n: '사막 보병', c: '13장 모래 폭풍', m: 'walk', d: 'A desert soldier: tan combat armor, helmet, goggles and face mask, rifle, ammo vest, boots kicking up sand.' },
+  { k: 'cy_titan', n: '강철 거신', c: '14장 최첨단 전선', b: 1, m: 'walk', mach: 1, d: 'A colossal future war robot titan: heavy dark steel armor plates, one glowing red visor eye, shoulder cannons, an energy shield generator on one arm, glowing seams.' },
+  { k: 'cy_drone', n: '자폭 드론', c: '14장 최첨단 전선', m: 'crawl', mach: 1, d: 'A small ground kamikaze drone robot: four spider legs, a round bomb body with a blinking red light, a short antenna, scuttling forward.' },
+  { k: 'sp_mother', n: '외계 모선', c: '15장 별의 전쟁', b: 1, m: 'fly', mach: 1, d: 'A huge alien mothership saucer: dark gunmetal disc hull with glowing orange lights, a giant glowing cyan core underneath, spikes and turrets around the rim.' },
+  { k: 'sp_grunt', n: '외계 병사', c: '15장 별의 전쟁', m: 'walk', d: 'An alien soldier: tall lanky insect-like humanoid with a hard dark teal carapace, four eyes, an armored chest plate, a glowing plasma rifle.' }
+];
+var DONE = {};
+try { DONE = JSON.parse(localStorage.getItem('tfkit.done') || '{}') || {}; } catch (e) { DONE = {}; }
+function save() { try { localStorage.setItem('tfkit.done', JSON.stringify(DONE)); } catch (e) {} }
+function card(e, no) {
+  var p = prompt(e), el = document.createElement('article');
+  el.className = 'card' + (DONE[e.k] ? ' done' : '');
+  el.innerHTML = '<div class="head"><span class="no">' + no + '</span><span class="name"></span>' + (e.b ? '<span class="tag boss">우두머리</span>' : '') + '<span class="tag"></span>'
+    + '<div class="acts"><button type="button" class="ghost" data-a="done"></button><button type="button" data-a="copy">복사</button></div></div>'
+    + '<div class="ok" aria-live="polite"></div><details><summary>프롬프트 보기 (적 키 ' + e.k + ')</summary><pre></pre></details>';
+  el.querySelector('.name').textContent = e.n;
+  el.querySelector('.tag:not(.boss)').textContent = e.c;
+  el.querySelector('pre').textContent = p;
+  var bd = el.querySelector('[data-a="done"]'), ok = el.querySelector('.ok');
+  function paint() { bd.textContent = DONE[e.k] ? '뽑음 ✓' : '뽑음'; el.classList.toggle('done', !!DONE[e.k]); }
+  paint();
+  bd.addEventListener('click', function () { if (DONE[e.k]) delete DONE[e.k]; else DONE[e.k] = 1; save(); paint(); });
+  el.querySelector('[data-a="copy"]').addEventListener('click', function () {
+    function fallback() {
+      var d = el.querySelector('details'); d.open = true;
+      var r = document.createRange(); r.selectNodeContents(el.querySelector('pre')); var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      ok.textContent = '자동 복사가 막혀 글을 선택해 뒀습니다. 길게 눌러 복사하세요.';
+    }
+    try {
+      navigator.clipboard.writeText(p).then(function () { ok.textContent = '복사됨. 제미나이 새 대화에 붙여 넣으세요.'; }, fallback);
+    } catch (err) { fallback(); }
+  });
+  return el;
+}
+var t = document.getElementById('test'), r = document.getElementById('rest'), i1 = 0, i2 = 0;
+EN.forEach(function (e) { if (e.t) t.appendChild(card(e, String(++i1))); else r.appendChild(card(e, String(++i2).padStart(2, '0'))); });
+</script>
+</body>
+</html>
