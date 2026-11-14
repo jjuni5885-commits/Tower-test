@@ -1,0 +1,190 @@
+# 제미나이 적 그림 넣기: python3 tools/sprite_in.py 원본그림 적키 [h=몸높이배율] [mo=walk|heavy|drive|crawl|fly] [order=fbs]
+#  원본: 한 장에 같은 적 세 모습(왼쪽부터 앞, 뒤, 옆(오른쪽을 봄)), 단색 배경(마젠타 #FF00FF 권장, 초록도 됨)
+#  하는 일: 배경색을 테두리에서 재서 이어진 배경만 지움(몸 안의 비슷한 색은 남김) → 가장자리 배경색 빼기 →
+#           작은 조각(제미나이 반짝이 표시 등) 지움 → 빈 세로줄로 세 모습 나누기 → 잘라서 높이 200px webp
+#  결과: src/sprites/키_f.webp, 키_b.webp, 키_s.webp, src/sprites/meta.json, src/tf_sprites.js(다시 만듦), shots/spr_키.png(확인용)
+#  모습이 두 개뿐이면 앞, 옆으로, 하나면 앞으로만 씀(order로 순서를 바꿀 수 있음: order=fsb 등)
+import sys, os, json, base64, io
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SPR = os.path.join(ROOT, 'src', 'sprites'); os.makedirs(SPR, exist_ok=True)
+TH = 200   # 저장 높이(px)
+
+def load_rgb(p):
+    im = Image.open(p).convert('RGBA'); a = np.asarray(im).astype(np.float32)
+    return a[..., :3], a[..., 3]
+
+def cut_bg(rgb, a0):
+    # 배경색: 테두리 픽셀 중앙값(제미나이 마젠타는 #FF00FF가 아니고 조금씩 흔들림)
+    H, W, _ = rgb.shape; b = 6
+    border = np.concatenate([rgb[:b].reshape(-1, 3), rgb[-b:].reshape(-1, 3), rgb[:, :b].reshape(-1, 3), rgb[:, -b:].reshape(-1, 3)])
+    bg = np.median(border, axis=0)
+    R, G, B = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mag = bg[1] < bg[0] - 60 and bg[1] < bg[2] - 60
+    grn = bg[1] > bg[0] + 60 and bg[1] > bg[2] + 60
+    # 배경색 성분(키): 마젠타면 min(R,B)-G, 초록이면 G-max(R,B). 배경과 섞인 정도 = 키 / 배경의 키
+    if mag: k = np.minimum(R, B) - G; kb = min(bg[0], bg[2]) - bg[1]; hue = np.abs(R - B) < 80
+    elif grn: k = G - np.maximum(R, B); kb = bg[1] - max(bg[0], bg[2]); hue = np.ones_like(R, bool)
+    else: k = np.zeros_like(R); kb = 1.0; hue = np.zeros_like(R, bool)
+    t = np.clip(k / max(kb, 1), 0, 1)
+    soft = np.where(hue & (k > 22), 1 - t, 1.0)          # 반투명 연기, 가장자리: 배경이 섞인 만큼 투명
+    # 테두리와 이어진 배경(배경색에 가까운 픽셀)은 완전 투명
+    d = np.sqrt(((rgb - bg) ** 2).sum(-1))
+    near = ((d < 95) & (a0 > 8)) | (a0 <= 8)
+    lab, n = ndi.label(near)
+    edge = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
+    bgm = np.isin(lab, list(edge))
+    alpha = np.where(bgm, 0.0, soft) * (a0 / 255.0)
+    alpha = np.where(alpha < 0.06, 0.0, alpha)
+    # 색 되돌리기: C = a F + (1 - a) B → F = (C - (1 - a) B) / a (보라 기운 빼기)
+    a3 = np.clip(alpha, 0.06, 1)[..., None]
+    out = np.clip((rgb - (1 - a3) * bg) / a3, 0, 255)
+    out = np.where((alpha > 0.995)[..., None], rgb, out)
+    # 남은 배경색 기운 누르기(완전 불투명이 아닌 곳만)
+    semi = (alpha < 0.995)
+    if mag:
+        lim = out[..., 1] + 18
+        out[..., 0] = np.where(semi & (out[..., 2] > lim), np.minimum(out[..., 0], np.maximum(lim, out[..., 0] * 0.9)), out[..., 0])
+        out[..., 2] = np.where(semi, np.minimum(out[..., 2], lim), out[..., 2])
+    elif grn:
+        lim = np.maximum(out[..., 0], out[..., 2]) + 18
+        out[..., 1] = np.where(semi, np.minimum(out[..., 1], lim), out[..., 1])
+    return out, alpha * 255.0, bg
+
+def kill_sparkle(rgb, alpha, bg):
+    # 제미나이 반짝이(오른쪽 아래 흰 네모별)는 배경색과 흰색을 섞은 색: C = bg + t(255 - bg), 세 채널의 t가 같음.
+    # 몸에 닿아 한 덩어리가 돼도 이 색만 골라 지움(회색 갑옷, 흰 털은 t가 채널마다 달라 안 걸림)
+    H, W = alpha.shape; y0, x0 = int(H * 0.7), int(W * 0.8)
+    C = rgb[y0:, x0:]; den = np.maximum(1.0, 255.0 - bg)
+    t = (C - bg) / den
+    ok = (t.min(-1) > 0.08) & (t.max(-1) < 0.97) & ((t.max(-1) - t.min(-1)) < 0.12)
+    ok = ndi.binary_opening(ok, iterations=1)
+    lab, n = ndi.label(ok)
+    for i, sl in enumerate(ndi.find_objects(lab)):
+        sz = (lab[sl] == i + 1).sum()
+        if 40 < sz < H * W * 0.01:
+            m = ndi.binary_dilation(lab == i + 1, iterations=2)
+            alpha[y0:, x0:][m] = 0
+    return alpha
+
+def clean(alpha):
+    H, W = alpha.shape; fg = alpha > 40
+    lab, n = ndi.label(fg, structure=np.ones((3, 3)))
+    if n == 0: return alpha
+    sizes = ndi.sum(fg, lab, range(1, n + 1)); big = sizes.max()
+    sl = ndi.find_objects(lab)
+    for i, s in enumerate(sizes):
+        y, x = sl[i]
+        corner = x.start > W * 0.85 and y.start > H * 0.75   # 오른쪽 아래 반짝이 표시(제미나이)
+        if s < big * 0.003 or (corner and s < big * 0.2):
+            alpha[lab == i + 1] = 0
+    return alpha
+
+def split(alpha, want=3):
+    H, W = alpha.shape; col = (alpha > 60).sum(0) > 0
+    segs = []; i = 0
+    while i < W:
+        if col[i]:
+            j = i
+            while j < W and col[j]: j += 1
+            segs.append([i, j]); i = j
+        else: i += 1
+    # 가까운 조각 합치기(무기 끝 등): 사이가 가장 좁은 것부터 want개가 될 때까지
+    while len(segs) > want:
+        gaps = [segs[k + 1][0] - segs[k][1] for k in range(len(segs) - 1)]
+        k = int(np.argmin(gaps)); segs[k] = [segs[k][0], segs[k + 1][1]]; del segs[k + 1]
+    return segs
+
+def split_masks(alpha, want=3):
+    # 빈 세로줄로 want개가 나오면 그대로. 무기, 촉수, 연기가 옆 모습까지 뻗어 줄이 안 비면:
+    # 세로 합이 가장 낮은 자리(1/3, 2/3 근처)를 칼선으로 두고, 이어진 조각마다 무게 중심 쪽 모습에 붙임
+    # (옆 모습 몸에 실제로 닿아 한 덩어리가 된 조각만 칼선에서 자름)
+    H, W = alpha.shape; fg = alpha > 60
+    segs = split(alpha, want)
+    if len(segs) == want:
+        out = []
+        for x0, x1 in segs:
+            m = np.zeros_like(fg); m[:, x0:x1] = fg[:, x0:x1]; out.append(m)
+        return out
+    prof = ndi.uniform_filter1d(fg.sum(0).astype(np.float32), 31)
+    cuts = []
+    for t in range(1, want):
+        c0 = W * t / want; lo, hi = int(c0 - W / 7), int(c0 + W / 7)
+        cuts.append(lo + int(np.argmin(prof[lo:hi])))
+    edges = [0] + cuts + [W]
+    lab, n = ndi.label(fg, structure=np.ones((3, 3)))
+    out = [np.zeros_like(fg) for _ in range(want)]
+    xs = np.arange(W)
+    for i, sl in enumerate(ndi.find_objects(lab)):
+        comp = lab[sl] == i + 1; ys, xx = sl
+        cm = comp.sum(0); cx = xs[xx]
+        share = [cm[(cx >= edges[v]) & (cx < edges[v + 1])].sum() / max(1, cm.sum()) for v in range(want)]
+        if sorted(share)[-2] > 0.15:   # 두 모습에 걸친 한 덩어리 → 칼선에서 자름
+            for v in range(want):
+                keep = comp & ((cx >= edges[v]) & (cx < edges[v + 1]))[None, :]
+                out[v][sl] |= keep
+        else:
+            out[int(np.argmax(share))][sl] |= comp
+    return out
+
+def main():
+    src, key = sys.argv[1], sys.argv[2]
+    opt = dict(a.split('=', 1) for a in sys.argv[3:] if '=' in a)
+    rgb, a0 = load_rgb(src)
+    out, alpha, bg = cut_bg(rgb, a0)
+    alpha = kill_sparkle(rgb, alpha, bg)
+    alpha = clean(alpha)
+    want = int(opt.get('n', 3))
+    masks = [m for m in split_masks(alpha, want) if m.any()]
+    if not masks: print('그림을 못 찾음'); sys.exit(1)
+    segs = masks
+    order = opt.get('order', 'fbs' if len(segs) == 3 else ('fs' if len(segs) == 2 else 'f'))
+    rgba = np.dstack([out, alpha]).astype(np.uint8)
+    meta_p = os.path.join(SPR, 'meta.json'); meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
+    m = {'fx': [0.5, 0.5, 0.5], 'h': float(opt.get('h', 1.2)), 'mo': opt.get('mo', 'walk'), 'src': os.path.basename(src)}
+    prev = []
+    for vi, mk in enumerate(segs[:len(order)]):
+        v = order[vi]
+        # 이 모습 조각만 남기고(옆 모습에서 뻗어 온 조각은 지움) 가장자리 반투명도 같은 모습 쪽만
+        grow = ndi.binary_dilation(mk, iterations=3)
+        cols = np.where(mk.any(0))[0]; x0, x1 = cols[0], cols[-1] + 1
+        part = rgba[:, x0:x1].copy(); part[..., 3] = (part[..., 3] * grow[:, x0:x1]).astype(np.uint8)
+        ys = np.where((part[..., 3] > 60).any(1))[0]; y0, y1 = ys[0], ys[-1] + 1
+        part = part[y0:y1]
+        # 발 중심: 아래 12% 줄의 불투명 픽셀 가로 평균
+        fh = max(2, int(part.shape[0] * 0.12)); foot = part[-fh:, :, 3].astype(np.float32)
+        xs = np.arange(part.shape[1]); fxv = float((foot.sum(0) * xs).sum() / max(1, foot.sum())) / part.shape[1]
+        im = Image.fromarray(part, 'RGBA'); sc = TH / im.height
+        im = im.resize((max(1, round(im.width * sc)), TH), Image.LANCZOS)
+        im.save(os.path.join(SPR, '%s_%s.webp' % (key, v)), 'WEBP', quality=84, method=6)
+        m['fx']['fbs'.index(v)] = round(fxv, 3); m[v] = 1; prev.append(im)
+        print(v, '크기', im.size, '발 중심', round(fxv, 3))
+    meta[key] = m; json.dump(meta, open(meta_p, 'w'), ensure_ascii=False, indent=1)
+    write_js(meta)
+    # 확인용: 체크 무늬 위에 세 모습
+    wsum = sum(p.width for p in prev) + 40 * (len(prev) + 1); sh = Image.new('RGBA', (wsum, TH + 40), (0, 0, 0, 0))
+    chk = Image.new('RGBA', sh.size, (200, 200, 200, 255)); px = chk.load()
+    for yy in range(sh.height):
+        for xx in range(sh.width):
+            if ((xx // 12) + (yy // 12)) % 2: px[xx, yy] = (150, 150, 150, 255)
+    xo = 40
+    for p in prev: chk.alpha_composite(p, (xo, 20)); xo += p.width + 40
+    os.makedirs(os.path.join(ROOT, 'shots'), exist_ok=True); chk.save(os.path.join(ROOT, 'shots', 'spr_%s.png' % key))
+    print('배경색', bg.round().tolist(), '모습', len(segs), '→ src/tf_sprites.js')
+
+def write_js(meta):
+    lines = ['// ===== tf_sprites.js : 제미나이 적 원화(tools/sprite_in.py가 만듦, 손으로 고치지 말 것) =====',
+             '// 키: { f 앞, b 뒤, s 옆(오른쪽을 봄): webp 데이터, fx: 발 중심 x 비율 [f, b, s], h: 코드 그림 키 대비 높이 배율 }', 'var TF_SPR_DATA = {};']
+    for k in sorted(meta):
+        m = meta[k]; o = {'fx': m['fx'], 'h': m['h'], 'mo': m.get('mo', 'walk')}
+        for v in 'fbs':
+            p = os.path.join(SPR, '%s_%s.webp' % (k, v))
+            if m.get(v) and os.path.exists(p): o[v] = 'data:image/webp;base64,' + base64.b64encode(open(p, 'rb').read()).decode()
+        lines.append('TF_SPR_DATA[%s] = %s;' % (json.dumps(k), json.dumps(o)))
+    open(os.path.join(ROOT, 'src', 'tf_sprites.js'), 'w').write('\n'.join(lines) + '\n')
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'rebuild': write_js(json.load(open(os.path.join(SPR, 'meta.json'))))
+    else: main()

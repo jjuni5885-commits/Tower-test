@@ -1,0 +1,12 @@
+# 적 그림 해석 점검: 시간 침략자(tf) 적이 어떤 그림으로 그려지는지
+import os, json
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page()
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(1200)
+    r = pg.evaluate("() => window.__tf.artOf()")
+    bad = {k: v for k, v in r.items() if v == 'goblin' or not (v.startswith(('eg_','ro_','tk_','jw_','ca_','sa_','jo_','tr_','st_','wi_','ju_','du_','cy_','sp_')) or v in ('caveman','sabertooth','ptero','rhino','hunter','cshaman','mammoth','raft','mammothKing'))}
+    print(len(r), 'tf enemies'); print(json.dumps(bad, ensure_ascii=False)); print(errs[:5])
+    b.close()

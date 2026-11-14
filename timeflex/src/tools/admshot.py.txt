@@ -1,0 +1,17 @@
+# 관리자 모드 켠 전투 화면 + 딜미터 열기: python3 tools/admshot.py → shots/adm.png
+import os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 360, 'height': 740}, device_scale_factor=1)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("()=>{__adm.on(1)}")
+    pg.evaluate("()=>{ __td.start(14,'normal'); }"); pg.wait_for_timeout(1500)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(150)
+    pg.evaluate("()=>{__td.bot(1); for(var i=0;i<200;i++) __td.step(60);}"); pg.wait_for_timeout(300)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(300)
+    pg.screenshot(path=ROOT + '/shots/adm1.png')
+    pg.evaluate("()=>{document.getElementById('bMeter').click()}"); pg.wait_for_timeout(600)
+    pg.screenshot(path=ROOT + '/shots/adm2.png')
+    print('errs', errs[:4]); b.close()

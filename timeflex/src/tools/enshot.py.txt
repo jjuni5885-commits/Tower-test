@@ -1,0 +1,18 @@
+# 적 확대 캡처: python3 tools/enshot.py 판번호 이름 [초] → shots/en_이름.png (전투 화면 + 적 주변 2배 확대)
+import sys, os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+mi = int(sys.argv[1]); name = sys.argv[2]; sec = float(sys.argv[3]) if len(sys.argv) > 3 else 6
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': 412, 'height': 860}, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("(mi)=>{ __tf.goMap(); for(var i=0;i<3;i++){try{__tf.close()}catch(e){}} try{__tf.mode('time')}catch(e){} __td.start(mi,'normal'); }", mi); pg.wait_for_timeout(1200)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(120)
+    pg.evaluate("()=>{ var g=__td.G(); g.lives=999; g.gold=0; __td.bot(0); __td.speed(1); }")
+    pg.evaluate('(n)=>{ __td.step(n); }', int(sec * 60)); pg.wait_for_timeout(1500)
+    for i in range(3): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(100)
+    pg.screenshot(path=ROOT + '/shots/en_%s.png' % name)
+    print(pg.evaluate("()=>{ var g=__td.G(); return g.M.id+' 적 '+g.enemies.length+' '+g.enemies.slice(0,6).map(function(e){return e.k}).join(','); }"), errs[:3])
+    b.close()

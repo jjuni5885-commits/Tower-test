@@ -1,0 +1,49 @@
+# 원화 적 전투 검수: python3 tools/sprshot.py 적키 [판번호=7] [이름] → shots/ss_이름.png
+# 판의 길을 따라 같은 적을 여러 마리 세워(아래, 위, 좌우 방향이 다 나오게) 실제 전투 화면으로 그림.
+# 위: 전체 화면(2배 해상도 축소), 아래: 적 주변 확대 + 걸음 4장면(0.12초 간격)
+import sys, os
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+k = sys.argv[1]; mi = int(sys.argv[2]) if len(sys.argv) > 2 else 7; name = sys.argv[3] if len(sys.argv) > 3 else k
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': 412, 'height': 860}, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("(mi)=>{ __tf.goMap(); for(var i=0;i<3;i++){try{__tf.close()}catch(e){}} try{__tf.mode('time')}catch(e){} __td.start(mi,'normal'); }", mi); pg.wait_for_timeout(1500)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(120)
+    info = pg.evaluate("""(k)=>{ var g=__td.G(); g.lives=999; g.gold=0; __td.speed(1);
+      var P=g.paths[0], L=P.len||P.L||(P.d&&P.d[P.d.length-1])||12, n=7, out=[];
+      for (var i=0;i<n;i++) __td.spawn(k, 0, 0.6 + (L-1.6)*i/(n-1));
+      g.enemies.forEach(function(e){ e.spd0=e.spd; e.spd=Math.min(e.spd,0.35); e.cast=null; });
+      return { L: L, n: g.enemies.length, keys: g.enemies.map(function(e){return e.k}).join(',') }; }""", k)
+    pg.wait_for_timeout(1200)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}; var m=document.querySelector('#modal'); if(m) m.classList.remove('show','on','open');}"); pg.wait_for_timeout(150)
+    full = ROOT + '/shots/ss_%s_full.png' % name; pg.screenshot(path=full)
+    # 적들 위치(화면 좌표)
+    pos = pg.evaluate("()=>__td.G().enemies.map(function(e){ var v=__td.view(); return [e.fbx/(v.dpr||1), e.fby/(v.dpr||1), e._vw||'-', +(e.dirx||0).toFixed(2), +(e.diry||0).toFixed(2)]; })")
+    frames = []
+    for t in range(4):
+        pg.wait_for_timeout(120); fp = ROOT + '/shots/_ss%d.png' % t; pg.screenshot(path=fp); frames.append(fp)
+    print('적', info, '오류', errs[:3])
+    for q in pos: print('  위치', [round(q[0]), round(q[1])], '모습', q[2], '방향', q[3], q[4])
+    b.close()
+# 합치기: 전체 + 적 3마리 확대(각 4장면)
+im = Image.open(full); W, H = im.size
+sheet_w = 1200; top = im.resize((sheet_w // 2, int(H * (sheet_w // 2) / W)))
+crops = []
+for q in pos[:7:2]:
+    cx, cy = int(q[0] * 2), int(q[1] * 2); box = (max(0, cx - 170), max(0, cy - 260), min(W, cx + 170), min(H, cy + 80))
+    row = [Image.open(f).crop(box) for f in frames]
+    crops.append((row, q[2]))
+rh = 340
+sheet = Image.new('RGB', (sheet_w, max(top.height, rh * len(crops))), (255, 255, 255))
+sheet.paste(top, (0, 0)); y = 0
+for row, vw in crops:
+    x = sheet_w // 2
+    for c in row[:2]:
+        c2 = c.resize((300, int(c.height * 300 / c.width))) if c.width else c; sheet.paste(c2, (x, y)); x += 300
+    y += rh
+sheet.save(ROOT + '/shots/ss_%s.png' % name)
+for f in frames: os.remove(f)

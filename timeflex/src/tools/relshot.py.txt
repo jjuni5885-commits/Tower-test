@@ -1,0 +1,35 @@
+# 배포 전 화면 점검: python3 tools/relshot.py 360x740 → shots/rel_*.png, 오류 출력
+import sys, os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+W, H = [int(v) for v in (sys.argv[1] if len(sys.argv) > 1 else '360x740').split('x')]
+CH = int(sys.argv[2]) if len(sys.argv) > 2 else 1; PFX = "" if CH == 1 else "c%d_" % CH
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': W, 'height': H}, has_touch=True, is_mobile=True, device_scale_factor=1)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    def shot(n): pg.screenshot(path=ROOT + '/shots/rel_' + PFX + '%s.png' % n)
+    def close():
+        for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(150)
+    shot('01title')
+    pg.evaluate("()=>{ __tf.goMap(); }"); pg.wait_for_timeout(1000); close(); shot('02select')
+    pg.evaluate("()=>{ __tf.enter(%d);" % CH + " }"); pg.wait_for_timeout(1200); close(); shot('03map')
+    for bid, n in (('bGacha', '04gacha'), ('bQuest', '05quest'), ('bShop', '06shop'), ('bRes', '07res'), ('bCodex', '08codex'), ('bSet', '09set')):
+        pg.evaluate("(id)=>{var e=document.getElementById(id); if(e) e.click();}", bid); pg.wait_for_timeout(900); shot(n); close()
+    pg.evaluate("()=>{ __tf.open(0); }"); pg.wait_for_timeout(1000); shot('10stage')
+    pg.evaluate("()=>{ var e=document.getElementById('stLo'); if(e) e.click(); }"); pg.wait_for_timeout(800); shot('11loadout'); close()
+    pg.evaluate("()=>{ __td.start(%d,'normal');" % ((CH-1)*7) + " }"); pg.wait_for_timeout(2000)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(150)
+    shot('12battle0')
+    pg.evaluate("()=>{ __td.G().gold=3000; __td.bot(1); __td.speed(2); }")
+    for k in range(10):
+        pg.wait_for_timeout(1000); pg.evaluate("()=>{try{if(document.querySelector('#sModal:not(.hide) .pkc')) document.querySelector('#sModal .pkc').click();}catch(e){}}")
+    shot('13battle1')
+    pg.evaluate("()=>{ for (var i=0;i<900 && !__td.G().over;i++) __td.step(60); }")
+    for i in range(40):
+        pg.evaluate("()=>{try{var b=document.querySelector('#sModal .pkc'); if(b) b.click();}catch(e){}}")
+        if pg.evaluate("()=>__td.st().kind==='result'"): break
+        pg.evaluate("()=>{try{if(__td.st().kind!=='result')__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(250)
+    pg.wait_for_timeout(1200); shot('14result')
+    print('errs', errs[:8]); b.close()

@@ -1,0 +1,31 @@
+# 그림판: python3 tools/tf_sheet.py enemies caveman,sabertooth 130 [파일]  /  towers sling,spear 120
+import sys, os, base64
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+kind, keys, px = sys.argv[1], sys.argv[2].split(','), int(sys.argv[3]) if len(sys.argv) > 3 else 120
+out = sys.argv[4] if len(sys.argv) > 4 else ROOT + '/shots/sheet_%s.png' % kind
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 1200, 'height': 900})
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(1500)
+    url = pg.evaluate("""([kind, keys, px]) => {
+      const S = px, cols = kind === 'enemies' ? (px > 100 ? 2 : 4) : 9, rows = keys.length, W = cols * S * (kind === 'enemies' && px > 100 ? 3.2 : 1.6), H = rows * S * (kind === 'enemies' ? 2.4 : 1.9);
+      const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+      x.fillStyle = '#d9cfb8'; x.fillRect(0, 0, W, H);
+      keys.forEach((k, r) => {
+        if (kind === 'enemies') {
+          const F = window.__tf.frames(k, S);
+          for (let i = 0; i < Math.min(cols, F.fr.length); i++) { const f = F.fr[Math.floor(i * F.fr.length / cols)]; x.drawImage(f.c, (i + 0.5) * S * (px > 100 ? 3.2 : 1.6) - f.ax, (r + 0.9) * S * 2.4 - f.ay); }
+          x.fillStyle = '#000'; x.font = '14px sans-serif'; x.fillText(k, 4, r * S * 2.4 + 14);
+        } else {
+          const L = [[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[4,1],[5,1],[6,1]];
+          L.forEach((q, i) => { const im = window.__tf.icon(k, q[0], q[1], S * 1.5); const cx = (i + 0.5) * S * 1.6, cy = (r + 0.5) * S * 1.9;
+            x.drawImage(im, cx - S * 0.75, cy - S * 0.75, S * 1.5, S * 1.5); });
+          x.fillStyle = '#000'; x.font = '14px sans-serif'; x.fillText(k, 4, r * S * 1.9 + 14);
+        }
+      });
+      return c.toDataURL('image/png');
+    }""", [kind, keys, px])
+    open(out, 'wb').write(base64.b64decode(url.split(',')[1]))
+    print(out, errs[:5])
+    b.close()

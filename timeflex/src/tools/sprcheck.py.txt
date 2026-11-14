@@ -1,0 +1,14 @@
+# 원화 확인판: python3 tools/sprcheck.py 적키 [배율] → shots/chk_키.png (모래, 풀, 어두운 바탕 위 세 모습. 보라 테두리, 반짝이, 잘림 확인)
+import sys, os
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+k = sys.argv[1]; z = float(sys.argv[2]) if len(sys.argv) > 2 else 1.4
+ims = [Image.open(os.path.join(ROOT, 'src', 'sprites', '%s_%s.webp' % (k, v))).convert('RGBA') for v in 'fbs' if os.path.exists(os.path.join(ROOT, 'src', 'sprites', '%s_%s.webp' % (k, v)))]
+ims = [im.resize((int(im.width * z), int(im.height * z)), Image.LANCZOS) for im in ims]
+W = sum(i.width for i in ims) + 20 * (len(ims) + 1); Hh = max(i.height for i in ims) + 20
+sheet = Image.new('RGB', (W, Hh * 3))
+for row, col in enumerate([(214, 196, 150), (96, 128, 70), (36, 34, 40)]):
+    band = Image.new('RGBA', (W, Hh), col + (255,)); x = 20
+    for im in ims: band.alpha_composite(im, (x, 10)); x += im.width + 20
+    sheet.paste(band.convert('RGB'), (0, row * Hh))
+sheet.save(os.path.join(ROOT, 'shots', 'chk_%s.png' % k)); print(sheet.size)

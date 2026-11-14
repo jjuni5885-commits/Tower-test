@@ -1,0 +1,26 @@
+# 모든 판을 실제 화면으로 잠깐씩 돌려 오류 찾기: python3 tools/rendersweep.py [시작] [끝]
+import sys, os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+a = int(sys.argv[1]) if len(sys.argv) > 1 else 0; z = int(sys.argv[2]) if len(sys.argv) > 2 else 105
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': 360, 'height': 740}, has_touch=True, is_mobile=True)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    pg.evaluate("()=>{__tf.goMap(); for(var i=0;i<3;i++){try{__tf.close()}catch(e){}}}")
+    res = []
+    for mi in range(a, z):
+        dk = ['easy', 'normal', 'hard'][mi % 3]; md = 'time' if mi % 2 else 'era'
+        n0 = len(errs)
+        pg.evaluate("(a)=>{ try{__tf.mode(a[2])}catch(e){}; try{__td.closeModal()}catch(e){}; __td.start(a[0],a[1]); }", [mi, dk, md]); pg.wait_for_timeout(900)
+        for i in range(3): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(100)
+        pg.evaluate("()=>{ var g=__td.G(); g.gold+=1500; __td.bot(1); __td.speed(3); }")
+        pg.wait_for_timeout(2200)
+        pg.evaluate("()=>{ try{var b=document.querySelector('#sModal .pkc'); if(b) b.click();}catch(e){} for (var i=0;i<400 && !__td.G().over;i++) __td.step(60); }")
+        pg.wait_for_timeout(900)
+        st = pg.evaluate("()=>{ var g=__td.G(); return [g.M.id, g.over, g.wave, g.N, g.lives, g.towers.length, g.tfHp||1]; }")
+        res.append((mi, dk, md, st, len(errs) - n0))
+        print(mi, dk, md, st, 'errs', len(errs) - n0, flush=True)
+    print('총 오류', len(errs)); [print('  ', e[:300]) for e in errs[:10]]
+    b.close()

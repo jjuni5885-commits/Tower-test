@@ -1,0 +1,21 @@
+# 장 지도 화면 모음: python3 tools/chmaps.py 2,3,5 → shots/chmaps.png
+import sys, os
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CH = [int(v) for v in sys.argv[1].split(',')]
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 360, 'height': 740}, device_scale_factor=1)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    ims = []
+    for ch in CH:
+        pg.evaluate("()=>{__tf.goMap();}"); pg.wait_for_timeout(400)
+        for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(100)
+        pg.evaluate("(c)=>{__tf.enter(c)}", ch); pg.wait_for_timeout(800)
+        for i in range(2): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(100)
+        f = ROOT + '/shots/chm_%d.png' % ch; pg.screenshot(path=f); ims.append(Image.open(f))
+    sh = Image.new('RGB', (360 * len(ims), 740))
+    for i, im in enumerate(ims): sh.paste(im, (i * 360, 0))
+    sh.save(ROOT + '/shots/chmaps.png'); print('errs', errs[:5])
+    b.close()

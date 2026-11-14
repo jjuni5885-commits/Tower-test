@@ -1,0 +1,44 @@
+# 화면마다 분홍, 보라 계열 색이 남은 요소 찾기: python3 tools/pinkscan.py
+import os, json
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+JS = r"""()=>{
+ function hsl(r,g,b){r/=255;g/=255;b/=255;var mx=Math.max(r,g,b),mn=Math.min(r,g,b),h=0,s=0,l=(mx+mn)/2,d=mx-mn;
+  if(d){s=l>0.5?d/(2-mx-mn):d/(mx+mn); if(mx===r)h=(g-b)/d+(g<b?6:0); else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60;} return [h,s,l];}
+ function pinks(str){var out=[],re=/rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/g,m; while((m=re.exec(str))){ if(m[4]!==undefined&&+m[4]<0.15)continue; var c=hsl(+m[1],+m[2],+m[3]); if(c[1]>0.3&&c[2]>0.15&&c[2]<0.97&&((c[0]>=265&&c[0]<=356))) out.push(m[0]);} return out;}
+ var res={}; document.querySelectorAll('body *').forEach(function(e){
+  var r=e.getBoundingClientRect(); if(r.width<4||r.height<4||r.bottom<0||r.top>innerHeight) return;
+  var cs=getComputedStyle(e); if(cs.visibility==='hidden'||cs.display==='none'||+cs.opacity===0) return;
+  var p=[].concat(pinks(cs.backgroundColor),pinks(cs.backgroundImage),pinks(cs.borderTopColor),pinks(cs.color),pinks(cs.boxShadow));
+  if(!p.length) return; var top=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); if(top&&top!==e&&!e.contains(top)&&!top.contains(e)) return;
+  var k=e.tagName.toLowerCase()+(e.id?'#'+e.id:'')+(typeof e.className==='string'&&e.className?'.'+e.className.trim().split(/\s+/).join('.'):'');
+  var t=(e.innerText||'').trim().slice(0,14).replace(/\n/g,' ');
+  if(!res[k]) res[k]=[p.slice(0,2).join(' '),t];});
+ return res;}"""
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': 360, 'height': 740}, has_touch=True, is_mobile=True)
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    def close():
+        for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(120)
+    def scan(n):
+        r = pg.evaluate(JS); print('==', n, len(r))
+        for k, v in r.items(): print('  ', k[:70], '|', v[0][:60], '|', v[1])
+    scan('title')
+    pg.evaluate("()=>{ __tf.goMap(); }"); pg.wait_for_timeout(1000); close(); scan('select')
+    pg.evaluate("()=>{ __tf.enter(1); }"); pg.wait_for_timeout(1200); close(); scan('map')
+    for bid in ('bGacha', 'bQuest', 'bShop', 'bRes', 'bCodex', 'bSet'):
+        pg.evaluate("(id)=>{var e=document.getElementById(id); if(e) e.click();}", bid); pg.wait_for_timeout(800); scan(bid); close()
+    pg.evaluate("()=>{ __tf.open(0); }"); pg.wait_for_timeout(900); scan('stage')
+    pg.evaluate("()=>{ var e=document.getElementById('stLo'); if(e) e.click(); }"); pg.wait_for_timeout(700); scan('loadout'); close()
+    pg.evaluate("()=>{ __td.start(0,'normal'); }"); pg.wait_for_timeout(2000)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(150)
+    scan('battle0')
+    pg.evaluate("()=>{ __td.G().gold=3000; __td.bot(1); for (var i=0;i<900 && !__td.G().over;i++) __td.step(60); }")
+    for i in range(40):
+        pg.evaluate("()=>{try{var b=document.querySelector('#sModal .pkc'); if(b) b.click();}catch(e){}}")
+        if pg.evaluate("()=>__td.st().kind==='result'"): break
+        pg.evaluate("()=>{try{if(__td.st().kind!=='result')__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(250)
+    pg.wait_for_timeout(1500); scan('result+tower')
+    pg.evaluate("()=>{try{document.querySelectorAll('#gcLayer button, .gNewOk, .ok').forEach(function(b){})}catch(e){}}")
+    b.close()

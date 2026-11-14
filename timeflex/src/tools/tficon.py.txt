@@ -1,0 +1,32 @@
+# 앱 아이콘: 돌 고리 시간의 문(푸른 소용돌이, 금빛 시계 바늘). android/res/mipmap-*/ic_launcher(.png, _fg.png)
+import os, base64
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+JS = """(o) => { const S = o.S, fg = o.fg, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'), m = S / 2;
+  const k = fg ? S / 108 * 72 / 2 : S / 2;   // 전경은 108dp 중 가운데 72dp 안전 영역
+  if (!fg) { const g = x.createRadialGradient(m, m * 0.8, 0, m, m, S * 0.75); g.addColorStop(0, '#3a2e22'); g.addColorStop(1, '#120e08'); x.fillStyle = g; x.beginPath(); x.roundRect(0, 0, S, S, S * 0.22); x.fill(); }
+  const R = k * 0.86;
+  // 소용돌이
+  const pg = x.createRadialGradient(m, m, 0, m, m, R * 0.8); pg.addColorStop(0, '#e8ffff'); pg.addColorStop(0.35, '#5ff0ff'); pg.addColorStop(0.75, '#1a6a9a'); pg.addColorStop(1, '#0a1a3a');
+  x.fillStyle = pg; x.beginPath(); x.arc(m, m, R * 0.8, 0, 7); x.fill();
+  x.strokeStyle = 'rgba(220,255,255,0.55)'; x.lineWidth = R * 0.04;
+  for (let i = 0; i < 4; i++) { x.beginPath(); for (let t = 0; t < 1; t += 0.02) { const a = i * 1.57 + t * 5, r = R * 0.75 * (1 - t); const px = m + Math.cos(a) * r, py = m + Math.sin(a) * r; t === 0 ? x.moveTo(px, py) : x.lineTo(px, py); } x.stroke(); }
+  // 돌 고리
+  x.lineWidth = R * 0.24; x.strokeStyle = '#8a8276'; x.beginPath(); x.arc(m, m, R * 0.9, 0, 7); x.stroke();
+  x.lineWidth = R * 0.03; x.strokeStyle = '#21170f'; x.beginPath(); x.arc(m, m, R * 1.02, 0, 7); x.stroke(); x.beginPath(); x.arc(m, m, R * 0.78, 0, 7); x.stroke();
+  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; x.beginPath(); x.moveTo(m + Math.cos(a) * R * 0.78, m + Math.sin(a) * R * 0.78); x.lineTo(m + Math.cos(a) * R * 1.02, m + Math.sin(a) * R * 1.02); x.stroke();
+    x.fillStyle = '#5ff0ff'; x.beginPath(); x.arc(m + Math.cos(a + 0.26) * R * 0.9, m + Math.sin(a + 0.26) * R * 0.9, R * 0.025, 0, 7); x.fill(); }
+  // 시계 바늘
+  x.lineCap = 'round'; [[ -1.2, 0.55, 0.09], [0.4, 0.7, 0.06]].forEach(q => { x.strokeStyle = '#21170f'; x.lineWidth = R * q[2] + R * 0.04; x.beginPath(); x.moveTo(m, m); x.lineTo(m + Math.cos(q[0]) * R * q[1], m + Math.sin(q[0]) * R * q[1]); x.stroke(); x.strokeStyle = '#f0c040'; x.lineWidth = R * q[2]; x.stroke(); });
+  x.fillStyle = '#f0c040'; x.beginPath(); x.arc(m, m, R * 0.09, 0, 7); x.fill(); x.strokeStyle = '#21170f'; x.lineWidth = R * 0.03; x.stroke();
+  return c.toDataURL('image/png'); }"""
+D = {'mdpi': (48, 108), 'hdpi': (72, 162), 'xhdpi': (96, 216), 'xxhdpi': (144, 324), 'xxxhdpi': (192, 432)}
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(); pg.set_content('<html></html>')
+    for d, (a, f) in D.items():
+        os.makedirs(ROOT + '/android/res/mipmap-' + d, exist_ok=True)
+        for S, fg, name in ((a, 0, 'ic_launcher'), (f, 1, 'ic_launcher_fg')):
+            u = pg.evaluate(JS, {'S': S, 'fg': fg}); open(ROOT + '/android/res/mipmap-%s/%s.png' % (d, name), 'wb').write(base64.b64decode(u.split(',')[1]))
+    u = pg.evaluate(JS, {'S': 512, 'fg': 0}); open(ROOT + '/android/icon/icon512.png', 'wb').write(base64.b64decode(u.split(',')[1]))
+    b.close()
+print('ok')
