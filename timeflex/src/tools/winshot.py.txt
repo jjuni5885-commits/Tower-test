@@ -1,0 +1,28 @@
+# 판 창과 결과 창: python3 tools/winshot.py 장 → shots/win_장.png
+import sys, os
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); ch = int(sys.argv[1])
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 360, 'height': 740}, device_scale_factor=1)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("()=>{__tf.goMap();}"); pg.wait_for_timeout(400)
+    for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(100)
+    pg.evaluate("(c)=>{__tf.enter(c)}", ch); pg.wait_for_timeout(800)
+    pg.evaluate("()=>{try{__tf.close()}catch(e){}; __tf.open(0)}"); pg.wait_for_timeout(900); pg.screenshot(path=ROOT + '/shots/w1.png')
+    idx = (ch - 1) * 7
+    pg.evaluate("(i)=>{ try{__tf.close()}catch(e){}; __td.start(i,'normal'); }", idx); pg.wait_for_timeout(1500)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(150)
+    pg.evaluate("()=>{ __td.G().gold=9000; __td.G().lives=999; __td.bot(1); for (var i=0;i<900 && !__td.G().over;i++) __td.step(60); }")
+    pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}")
+    for i in range(60):
+        pg.evaluate("()=>{try{if(__td.st().kind!=='result')__td.closeModal()}catch(e){}}")
+        pg.evaluate("()=>{try{var b=document.querySelector('#sModal .pkc'); if(b) b.click();}catch(e){}}")
+        if pg.evaluate("()=>__td.st().kind==='result'"): break
+        pg.wait_for_timeout(250)
+    pg.wait_for_timeout(800); pg.screenshot(path=ROOT + '/shots/w2.png')
+    pg.evaluate("()=>{__td.start(%d,'normal')}" % (idx + 1)); pg.wait_for_timeout(1200); pg.evaluate("()=>{G=__td.G(); G.seenEnemies={};}")
+    ims = [Image.open(ROOT + '/shots/w%d.png' % i) for i in (1, 2)]; sh = Image.new('RGB', (720, 740))
+    for i, im in enumerate(ims): sh.paste(im, (i * 360, 0))
+    sh.save(ROOT + '/shots/win_%d.png' % ch); print('errs', errs[:5]); b.close()

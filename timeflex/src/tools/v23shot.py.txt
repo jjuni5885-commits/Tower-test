@@ -1,0 +1,46 @@
+# v2.3 확인: 쟁반 아래 고정 + 지도 올림, 레이더 범위
+import sys, os, json
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+W, H = [int(v) for v in (sys.argv[1] if len(sys.argv) > 1 else '360x740').split('x')]
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': W, 'height': H}, has_touch=True, is_mobile=True, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    pg.evaluate("""()=>{const t=__td; t.unlockAll(); t.ownAll(); const mi=t.MAPS.findIndex(m=>m.id==='c3s04'); t.start(mi<0?10:mi,'normal');}""")
+    pg.wait_for_timeout(1500)
+    for i in range(6):
+        pg.evaluate("()=>{try{__td.closeModal()}catch(e){}; const s=document.getElementById('stSkip'); if(s&&!document.getElementById('story').classList.contains('hide')) s.click();}")
+        pg.wait_for_timeout(400)
+    info = pg.evaluate("""()=>{const g=__td.G(); g.gold=99999; const v=__td.view(); const cells=[];
+      for(let r=g.rows-1;r>=0;r--)for(let c=0;c<g.cols;c++){ if(g.kind[r*g.cols+c]==='build'||g.kind[r*g.cols+c]==='buildW'){} }
+      return {rows:g.rows, cols:g.cols, kinds:[...new Set(g.kind)], v:{S:v.S,ox:v.ox,oy:v.oy,dpr:v.dpr,top:v.top,bot:v.bot}}}""")
+    print(info)
+    # 빈 땅 칸 찾기: fdCellSite 사용 불가(밖) → 직접 kind로
+    cells = pg.evaluate("""()=>{const g=__td.G(), out=[]; for(let r=0;r<g.rows;r++)for(let c=0;c<g.cols;c++){const i=r*g.cols+c; if(g.towerAt[i]<0&&(g.obsAt[i]<0)&&g.kind[i]!=='path'&&g.kind[i]!=='rock'&&g.kind[i]!=='gate'&&g.kind[i]!=='water'&&g.kind[i]!=='spawn') out.push([c,r,g.kind[i]]);} return out;}""")
+    print(len(cells), cells[:3], cells[-3:])
+    def xy(c, r):
+        v = pg.evaluate("()=>{const v=__td.view(); return {S:v.S,ox:v.ox,oy:v.oy,dpr:v.dpr}}")
+        return ((v['ox'] + (c + .5) * v['S']) / v['dpr'], (v['oy'] + (r + .5) * v['S']) / v['dpr'])
+    low = cells[-1]; mid = cells[len(cells)//2]
+    for name, (c, r, k) in (('low', low), ('mid', mid)):
+        x, y = xy(c, r); pg.touchscreen.tap(x, y); pg.wait_for_timeout(700)
+        st = pg.evaluate("()=>({cls:document.getElementById('tray').className, top:document.getElementById('tray').offsetTop, cam:0})")
+        print(name, c, r, st); pg.screenshot(path=ROOT + '/shots/v23_build_%s.png' % name)
+        pg.evaluate("()=>{document.querySelector('#tray [data-a=close]')&&document.querySelector('#tray [data-a=close]').click()}"); pg.wait_for_timeout(500)
+    # 저격탑 세우고 숨은 적 두기
+    c, r, k = low
+    ok = pg.evaluate("([c,r])=>{const t=__td.build('sniper',c,r); return !!t}", [c, r])
+    pg.evaluate("()=>{const g=__td.G(); const ks=Object.keys(__td.EN).filter(k=>__td.EN[k].stealth&&!__td.EN[k].boss); for(let i=0;i<3;i++){ try{__td.fd.spawn(ks[0],0,2+i*1.5)}catch(e){} }; __td.speed(1)}")
+    pg.wait_for_timeout(300)
+    pg.wait_for_timeout(800)
+    for i in range(4):
+        pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(300)
+    x, y = xy(c, r); print('tap', x, y, pg.evaluate("()=>__td.G().towers.map(t=>[t.k,t.c,t.r])")); pg.touchscreen.tap(x, y)
+    for _ in range(6): print(pg.evaluate("()=>document.getElementById('tray').className+' '+__td.st().scr+' '+__td.st().modal")); pg.wait_for_timeout(150)
+    if pg.evaluate("()=>document.getElementById('tray').className") == 'hide': pg.mouse.click(x, y); pg.wait_for_timeout(1200)
+    print('sniper', ok, pg.evaluate("()=>document.getElementById('tray').className"))
+    pg.screenshot(path=ROOT + '/shots/v23_radar.png')
+    print('errs', errs[:5])
+    b.close()

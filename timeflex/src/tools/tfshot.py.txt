@@ -1,0 +1,28 @@
+# 타임플렉스 화면 점검: python3 tools/tfshot.py 360x740
+import sys, os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+W, H = [int(v) for v in (sys.argv[1] if len(sys.argv) > 1 else '360x740').split('x')]
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': W, 'height': H}, has_touch=True, is_mobile=True, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    def shot(n): pg.screenshot(path=ROOT + '/shots/tf_%s.png' % n)
+    shot('1title')
+    pg.evaluate("()=>{ __tf.goMap(); }"); pg.wait_for_timeout(1200)
+    for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(200)
+    shot('2select')
+    pg.evaluate("()=>{ __tf.enter(1); }"); pg.wait_for_timeout(1500); shot('3map')
+    pg.evaluate("()=>{ __tf.open(0); }"); pg.wait_for_timeout(1200); shot('4stage')
+    pg.evaluate("()=>{ __tf.close(); __td.start(0,'normal'); }"); pg.wait_for_timeout(2500)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(200)
+    pg.evaluate("""()=>{ const g=__td.G(); g.gold=5000; const ks=['sling','spear','bonfire','totem']; let n=0;
+      for(let r=2;r<g.rows-1&&n<8;r++)for(let c=0;c<g.cols&&n<8;c++){ const i=r*g.cols+c; if(g.kind[i]==='g'&&g.towerAt[i]<0&&g.obsAt[i]<0){ const near=[[0,1],[1,0],[0,-1],[-1,0]].some(d=>{const cc=c+d[0],rr=r+d[1];return cc>=0&&rr>=0&&cc<g.cols&&rr<g.rows&&g.kind[rr*g.cols+cc]==='p'}); if(near){ const t=__td.build(ks[n%4],c,r); if(t){ for(let L=0;L<(n<4?1:3);L++) __td.upgrade(t,0); n++; } } } }
+      __td.bot(1); __td.speed(2); }""")
+    for k in range(18):
+        pg.wait_for_timeout(1000); pg.evaluate("()=>{try{__tf.close()}catch(e){}}")
+        if k == 8: shot('5battle')
+    shot('6battle')
+    print('errs', errs[:8])
+    b.close()

@@ -1,0 +1,27 @@
+# 장별 전투 화면: python3 tools/tfshot2.py 2:5,3:7,...  (장:판)
+import sys, os
+from playwright.sync_api import sync_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LIST = [tuple(int(v) for v in q.split(':')) for q in sys.argv[1].split(',')]
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox'])
+    pg = b.new_page(viewport={'width': 360, 'height': 740}, has_touch=True, is_mobile=True, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2500)
+    for ch, s in LIST:
+        pg.evaluate("()=>{ __tf.goMap(); }"); pg.wait_for_timeout(600)
+        for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}}"); pg.wait_for_timeout(150)
+        pg.evaluate("(ch)=>{ __tf.enter(ch); }", ch); pg.wait_for_timeout(900)
+        if s == 1: pg.screenshot(path=ROOT + '/shots/m_c%d.png' % ch)
+        idx = (ch - 1) * 7 + s - 1
+        pg.evaluate("(i)=>{ try{__tf.close()}catch(e){}; __td.start(i,'normal'); }", idx); pg.wait_for_timeout(1500)
+        for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(150)
+        pg.evaluate("""(ch)=>{ const g=__td.G(); g.gold=9000; let ks=[]; for(let e=1;e<=ch;e++) ks=ks.concat(TFE[e]||[]); ks=ks.slice(-6); let n=0;
+          for(let r=1;r<g.rows-1&&n<9;r++)for(let c=0;c<g.cols&&n<9;c++){ const i=r*g.cols+c; if(g.kind[i]==='g'&&g.towerAt[i]<0&&g.obsAt[i]<0){ const near=[[0,1],[1,0],[0,-1],[-1,0]].some(d=>{const cc=c+d[0],rr=r+d[1];return cc>=0&&rr>=0&&cc<g.cols&&rr<g.rows&&g.kind[rr*g.cols+cc]==='p'}); if(near){ const t=__td.build(ks[n%ks.length],c,r); if(t){ for(let L=0;L<(n%3)+1;L++) __td.upgrade(t,n%2); n++; } } } }
+          __td.bot(1); __td.speed(3); }""".replace('TFE', '__tf.eraTowers()'), ch)
+        for k in range(14):
+            pg.wait_for_timeout(800); pg.evaluate("()=>{try{__tf.close()}catch(e){}}")
+        pg.screenshot(path=ROOT + '/shots/b_c%ds%d.png' % (ch, s))
+        pg.evaluate("()=>{try{__td.quit()}catch(e){}}"); pg.wait_for_timeout(300)
+    print('errs', errs[:8])
+    b.close()

@@ -1,0 +1,23 @@
+# 테마 견본: python3 tools/themesheet.py th1,th2,...  → shots/themes.png
+import sys, os
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ths = sys.argv[1].split(','); out = sys.argv[2] if len(sys.argv) > 2 else ROOT + '/shots/themes.png'
+mi = int(sys.argv[3]) if len(sys.argv) > 3 else 4
+ims = []
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 360, 'height': 640}, device_scale_factor=1)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(1500)
+    for th in ths:
+        pg.evaluate("([th,mi])=>{ __td.unlockAll(); __td.MAPS[mi].theme=th; __td.start(mi,'normal'); }", [th, mi]); pg.wait_for_timeout(1300)
+        for i in range(3): pg.evaluate("()=>{try{__tf.close()}catch(e){}; const s=document.getElementById('stSkip'); if(s&&!document.getElementById('story').classList.contains('hide')) s.click();}"); pg.wait_for_timeout(150)
+        pg.screenshot(path='/tmp/th.png'); im = Image.open('/tmp/th.png').crop((0, 60, 360, 560)).resize((180, 250)); ims.append((th, im))
+    print(errs[:3]); b.close()
+from PIL import ImageDraw
+cols = min(8, len(ims)); rows = (len(ims) + cols - 1) // cols
+sheet = Image.new('RGB', (cols * 182, rows * 268), 'white'); d = ImageDraw.Draw(sheet)
+for i, (th, im) in enumerate(ims):
+    x, y = (i % cols) * 182, (i // cols) * 268; sheet.paste(im, (x, y + 16)); d.text((x + 4, y + 2), th, fill='black')
+sheet.save(out); print(out)
