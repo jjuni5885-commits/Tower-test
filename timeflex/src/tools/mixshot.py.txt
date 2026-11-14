@@ -1,0 +1,37 @@
+# 적 여러 종 + 탑 몇 개를 한 화면에: python3 tools/mixshot.py 판번호 "적,적,..." "탑:열:행:단계;..." 이름 [배율=3]
+# → shots/mix_이름.png (전체) + shots/mixz_이름.png (적마다 확대 4장면: 0.1초 간격)
+import sys, os, io
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+mi = int(sys.argv[1]); keys = sys.argv[2].split(','); tw = [t for t in sys.argv[3].split(';') if t]; name = sys.argv[4]; Z = int(sys.argv[5]) if len(sys.argv) > 5 else 3
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 390, 'height': 760}, device_scale_factor=Z)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("(m)=>{__td.start(m,'normal')}", mi); pg.wait_for_timeout(800)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(100)
+    pg.evaluate("""(a)=>{ var g=__td.G(); g.lives=999; g.gold=99999; __td.speed(1);
+      a[1].forEach(function(s){ var q=s.split(':'); var t=__td.build(q[0], +q[1], +q[2]); if (t) { for (var l=1;l<(+q[3]||1);l++) __td.upgrade(t, 0); } });
+      var P=g.paths[0], L=P.len||12, n=a[0].length; a[0].forEach(function(k,i){ __td.spawn(k, 0, 0.8 + (L*0.8)*i/Math.max(1,n-1)); });
+      g.enemies.forEach(function(e){ e.spd=Math.min(e.spd,0.45); e.cast=null; }); g.towers.forEach(function(t){ t.cd = 999; t.rate = 0; }); }""", [keys, tw])
+    pg.wait_for_timeout(400)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(80)
+    pg.wait_for_timeout(600)
+    full = Image.open(io.BytesIO(pg.screenshot())).convert('RGB')
+    shots = []
+    for t in range(4):
+        pos = pg.evaluate("""()=>{ var g=__td.G(), c=document.getElementById('game'), r=c.getBoundingClientRect(); return g.enemies.map(function(e){ return [r.left + e.fbx * r.width / c.width, r.top + e.fby * r.height / c.height, e.k, e._vw||'', +(e.dirx||0).toFixed(2), +(e.diry||0).toFixed(2)]; }); }""")
+        shots.append((Image.open(io.BytesIO(pg.screenshot())).convert('RGB'), pos)); pg.wait_for_timeout(100)
+    print('errors', errs[:3]); print([q[2:] for q in shots[0][1]])
+    b.close()
+full.resize((full.width * 2 // Z, full.height * 2 // Z)).save(os.path.join(ROOT, 'shots', 'mix_%s.png' % name))
+n = len(shots[0][1]); T = 70 * Z
+sheet = Image.new('RGB', (T * 4, T * max(1, n)), 'white')
+for j in range(n):
+    for t in range(4):
+        im, pos = shots[t]
+        if j >= len(pos): continue
+        x, y = pos[j][0] * Z, pos[j][1] * Z
+        sheet.paste(im.crop((int(x - T / 2), int(y - T * 0.8), int(x + T / 2), int(y + T * 0.2))), (t * T, j * T))
+sheet.save(os.path.join(ROOT, 'shots', 'mixz_%s.png' % name))

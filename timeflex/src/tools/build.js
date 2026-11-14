@@ -5,7 +5,7 @@ const S = p => fs.readFileSync(path.join(__dirname, '..', 'src', p), 'utf8');
 const planned = ['util.js', 'data.js', '?data_towers2.js', '?data_enemies2.js', 'tf_data.js', 'tf_eras.js', '?stages_t1.js', '?stages_t2.js', '?stages_t3.js', '?stages_t4.js', '?stages_t5.js', '?stages_t6.js', '?stages_t7.js', '?stages_t8.js', '?stages_t9.js', '?stages_t10.js', '?stages_t11.js', '?stages_t12.js', '?stages_t13.js', '?stages_t14.js', '?stages_t15.js', '?tf_bonus.js',
   'path.js', 'logic.js', '?logic_towers2.js', '?logic_enemies2.js', '?logic_rules.js', '?logic_v22.js', 'bot.js', '?tf_alias.js',
   'art_core.js', 'art_map.js', '?art_map2.js', '?art_map3.js', 'art_tower.js', '?art_tower2.js', '?art_tower3.js', '?art_tower4.js',
-  'art_enemy.js', '?art_enemy_ch2.js', '?art_enemy_ch3.js', '?art_enemy_ch4.js', '?tf_art_enemy.js', '?tf_art_enemy2.js', '?tf_sprites.js', '?tf_spr.js', '?tf_art_tower.js', '?tf_art_tower2.js', '?tf_art_map.js', 'art_fx.js', '?art_fx2.js', 'render.js', '?render_tw.js', '?render_units.js',
+  'art_enemy.js', '?art_enemy_ch2.js', '?art_enemy_ch3.js', '?art_enemy_ch4.js', '?tf_art_enemy.js', '?tf_art_enemy2.js', '?tf_art_v3.js', '?tf_art_v3_cfg.js', '?tf_spr.js', '?tf_art_tower.js', '?tf_art_tower2.js', '?tf_art_map.js', 'art_fx.js', '?art_fx2.js', 'render.js', '?render_tw.js', '?render_units.js',
   'audio.js', '?audio2.js', 'ui_art.js', '?ui_art2.js', 'ui.js', 'meta.js', 'gacha.js', '?chapters.js', '?loadout.js', '?admin.js', '?bonus.js', '?ui_v22.js', '?tf_audio.js', '?tf_music.js', '?tf_ui.js',
   'i18n_data.js', 'i18n_v13_ui.js', 'i18n_v13_maps.js', '?i18n_v20.js', 'i18n.js', 'main.js'];
 const order = planned.filter(f => f[0] !== '?' || fs.existsSync(path.join(__dirname, '..', 'src', f.slice(1)))).map(f => f.replace(/^\?/, ''));

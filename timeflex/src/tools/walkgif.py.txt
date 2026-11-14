@@ -1,0 +1,28 @@
+# 걸음 움직임 확인용 GIF: python3 tools/walkgif.py 적키 판번호 이름 [마리=5] [프레임=28]
+# 판 길을 따라 같은 적을 세워 실제 속도로 걷게 하고 0.07초 간격으로 찍어 shots/walk_이름.gif (적이 있는 쪽만 잘라 줄임)
+import sys, os, io
+from playwright.sync_api import sync_playwright
+from PIL import Image
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+k, mi, name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+n = int(sys.argv[4]) if len(sys.argv) > 4 else 5; nf = int(sys.argv[5]) if len(sys.argv) > 5 else 28
+with sync_playwright() as p:
+    b = p.chromium.launch(args=['--no-sandbox']); pg = b.new_page(viewport={'width': 390, 'height': 760}, device_scale_factor=2)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto('file://' + ROOT + '/out/index.html'); pg.wait_for_timeout(2000)
+    pg.evaluate("(m)=>{__td.start(m,'normal')}", mi); pg.wait_for_timeout(800)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(100)
+    pg.evaluate("""(a)=>{ var g=__td.G(); g.lives=999; g.gold=0; __td.speed(1); var P=g.paths[0], L=P.len||12;
+      for (var i=0;i<a[1];i++) __td.spawn(a[0], 0, 0.8 + (L*0.75)*i/Math.max(1,a[1]-1)); g.enemies.forEach(function(e){ e.cast=null; }); }""", [k, n])
+    pg.wait_for_timeout(500)
+    for i in range(4): pg.evaluate("()=>{try{__td.closeModal()}catch(e){}}"); pg.wait_for_timeout(80)
+    frames = []
+    for i in range(nf):
+        frames.append(Image.open(io.BytesIO(pg.screenshot())).convert('RGB')); pg.wait_for_timeout(70)
+    print('errors', errs[:3])
+    b.close()
+W, H = frames[0].size
+frames = [f.resize((W * 45 // 100, H * 45 // 100)) for f in frames]
+out = os.path.join(ROOT, 'shots', 'walk_%s.gif' % name)
+frames[0].save(out, save_all=True, append_images=frames[1:], duration=70, loop=0, optimize=True)
+print(out, frames[0].size, os.path.getsize(out))
