@@ -1,0 +1,83 @@
+/* ===== 관리자 모드 (admin.js). 창은 공용 .modal 위에, 색은 공용 변수 ===== */
+.modal.admRe { animation: none; }
+.modal.admin, .modal.admpin { max-width: 380px; }
+.modal.admin::before, .modal.admpin::before { display: none; }
+.modal.admin .pt, .modal.admpin .pt { margin-bottom: 6px; }
+.modal.admin .xbtn, .modal.admpin .xbtn { min-height: 38px; padding: 9px 26px; }
+.modal.admin .admBody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 1px 4px; }
+.admTabs { margin: 2px 0 8px; }
+.admTabs .tab { flex-direction: row; justify-content: center; padding: 7px 2px; font-size: 16px; }
+/* 숫자판 */
+.admHint { margin: 0 0 8px; text-align: center; font-size: 15px; line-height: 1.3; color: var(--ink); }
+.admDots { display: flex; justify-content: center; gap: 10px; height: 22px; margin-bottom: 10px; }
+.admDots i { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--lilacd); }
+.admDots i.aOn { background: var(--hot); border-color: var(--hotd); }
+.admDots.aBad { animation: admShake 0.36s ease-out; }
+@keyframes admShake { 20% { transform: translateX(-9px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
+.admPad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.admKey { height: 54px; border-radius: 16px; background: #fff; border: 3px solid var(--lilac2); box-shadow: 0 4px 0 #dccdf3; font-family: 'CUTE', 'PRT', sans-serif; font-size: 24px; line-height: 1; color: var(--ink); }
+.admKey:active { transform: translateY(2px); box-shadow: 0 2px 0 #dccdf3; background: #fff0f7; }
+.admKey.aDel { font-size: 17px; color: var(--hotd); }
+.admKey.aOk { font-size: 18px; color: #fff; background: linear-gradient(180deg, #ffb6d6, #ff6fa8); border-color: transparent; box-shadow: 0 4px 0 var(--hotd); text-shadow: 0 2px 0 rgba(190, 50, 110, 0.5); }
+/* 줄: 이름, 값, 단추 */
+.admRow { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 10px; margin-bottom: 6px; border-radius: 14px; background: #fff; border: 2px solid var(--lilac2); font-family: 'CUTE', 'PRT', sans-serif; font-size: 16px; line-height: 1.2; color: var(--ink); text-align: left; }
+button.admRow { box-shadow: 0 3px 0 #e8ddf7; }
+button.admRow:active { transform: translateY(2px); box-shadow: 0 1px 0 #e8ddf7; }
+.admL { display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; font-family: 'CUTE', 'PRT', sans-serif; font-size: 16px; color: var(--ink); }
+.admL img { width: 24px; height: 24px; flex: none; }
+.admV { flex: none; font-family: 'CUTE', 'PRT', sans-serif; font-weight: 400; font-size: 18px; color: var(--hotd); font-variant-numeric: tabular-nums; }
+.admIn { flex: none; display: flex; gap: 5px; }
+.admIn .admB { flex: none; min-width: 58px; }
+.admBs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.admBs .admB { flex: 1 1 0; }
+.admBs.aTwo .admB { flex: 1 1 calc(50% - 3px); }
+.admBs.aOne .admB { flex: 1 1 100%; }
+.admBs > .admL { flex: 0 0 auto; }
+.admB { position: relative; min-width: 0; min-height: 40px; padding: 6px 8px; border-radius: 13px; background: linear-gradient(180deg, #ffffff, #f8f2ff); border: 2px solid var(--lilacd); box-shadow: 0 3px 0 #dccdf3; font-family: 'CUTE', 'PRT', sans-serif; font-size: 15px; line-height: 1.2; color: var(--ink); text-align: center; white-space: normal; }
+.admB:active { transform: translateY(2px); box-shadow: 0 1px 0 #dccdf3; }
+.admB.aSub { background: #fff7f2; border-color: #ffc9b8; box-shadow: 0 3px 0 #f6c3b4; color: #b8483a; }
+.admB.aOn { background: #fff0f7; border-color: var(--pink2); box-shadow: 0 3px 0 rgba(217, 79, 138, 0.35); color: var(--hotd); }
+.admB.aArm { background: linear-gradient(180deg, #ffb2a6, #ff8a7a); border-color: transparent; box-shadow: 0 3px 0 #e0645a; color: #fff; text-shadow: 0 1px 0 rgba(170, 60, 50, 0.6); }
+.admB.aGold { background: linear-gradient(180deg, #fff3a6, #ffc93a); border-color: #f0a400; box-shadow: 0 3px 0 #d98a00; color: #7a4300; }
+.admB.aRnd { flex: none; width: 40px; padding: 0; font-size: 22px; }
+.admB.aTg { display: flex; align-items: center; justify-content: space-between; gap: 4px; text-align: left; padding: 6px 6px 6px 10px; }
+.admT { flex: none; font-style: normal; font-size: 13px; line-height: 18px; min-width: 34px; padding: 3px 6px 1px; border-radius: 11px; background: #efe8f8; color: var(--ink); text-align: center; }
+.admT.aOn { background: linear-gradient(180deg, #ffa6cd, #ff6fa8); color: #fff; }
+.admSec { margin: 4px 2px 6px; font-family: 'CUTE', 'PRT', sans-serif; font-size: 15px; line-height: 1.3; color: var(--hotd); }
+.admNote { margin: 2px 2px 8px; font-size: 13px; line-height: 1.45; color: var(--ink); }
+/* 탑, 적 모음 */
+.admGrid { display: grid; gap: 5px; margin-bottom: 8px; }
+.admGrid.aTw { grid-template-columns: repeat(6, 1fr); }
+.admGrid.aEn { grid-template-columns: repeat(4, 1fr); }
+.admC { position: relative; min-width: 0; padding: 3px 1px 2px; border-radius: 12px; background: #fff; border: 2px solid var(--lilac2); display: flex; flex-direction: column; align-items: center; font-family: 'CUTE', 'PRT', sans-serif; color: var(--ink); }
+.admC img { width: 40px; height: 40px; }
+.admGrid.aTw .admC { height: 50px; justify-content: center; }
+.admGrid.aTw .admC img { width: 36px; height: 36px; }
+.admC.aNo img { opacity: 0.45; filter: saturate(0.2); }
+.admC.aSel { border-color: var(--hot); box-shadow: 0 0 0 2px var(--pink2); background: #fff5fa; }
+.admC.aAd { border-color: #f0b400; background: #fffbe8; }
+.admC.aBs { border-color: #ffb0a4; background: #fff6f3; }
+.admC em { position: absolute; right: -2px; bottom: -3px; font-style: normal; font-size: 11px; line-height: 14px; padding: 0 4px; border-radius: 8px; background: #ffd23a; color: #6a3c00; }
+.admC span { font-size: 12px; line-height: 1.15; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.admC:active { transform: scale(0.94); }
+.admPick { display: flex; align-items: center; gap: 6px; padding: 6px 8px; margin-bottom: 8px; border-radius: 14px; background: #fff; border: 2px solid var(--pink); }
+.admPick > img { width: 46px; height: 46px; flex: none; }
+.admPT { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.admPT b { font-family: 'CUTE', 'PRT', sans-serif; font-weight: 400; font-size: 17px; line-height: 1.2; color: var(--ink); }
+.admPT span { font-size: 12px; line-height: 1.3; color: var(--ink); }
+.admPick .admB { flex: none; min-width: 52px; }
+.admPick .admB.aRnd { min-width: 0; }
+.admPop { animation: admPop 0.22s ease-out; }
+@keyframes admPop { 40% { transform: scale(1.18); } }
+/* 구석 단추: 전투 밖은 위 막대 아래 왼쪽, 전투 중은 admin.js가 전장을 안 가리는 자리를 잡아 줌 */
+.admFab { position: absolute; z-index: 55; left: calc(8px + var(--sal)); top: calc(58px + var(--sat)); width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(180deg, #fff8d6, #ffd95a); border: 3px solid #f0a400; box-shadow: 0 3px 0 #c98200, 0 6px 10px rgba(74, 42, 90, 0.2); display: flex; align-items: center; justify-content: center; }
+.admFab img { width: 24px; height: 24px; }
+.admFab:active { transform: translateY(2px); box-shadow: 0 1px 0 #c98200; }
+.admFab.aBt { z-index: 12; width: 34px; height: 34px; border-width: 2px; }
+.admFab.aBt img { width: 20px; height: 20px; }
+.admFab.aDim { opacity: 0.6; }
+body.trayopen .admFab.aBt { display: none; }
+.btn.admPauseBtn { background: linear-gradient(180deg, #fff8d6, #ffe07a); border-color: #f0a400; box-shadow: 0 4px 0 #d99a00; color: #6a3c00; }
+.btn.admPauseBtn img { width: 20px; height: 20px; vertical-align: -4px; margin-right: 4px; }
+/* 관리자 모드가 켜져 있으면 타이틀 버전 글자에 표시 */
+body.admOn #ver, body.admOn #verTxt { border: 2px solid #f0a400; background: #fff8d6; color: #6a3c00; }
