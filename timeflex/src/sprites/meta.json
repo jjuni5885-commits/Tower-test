@@ -1,0 +1,184 @@
+{
+ "tr_landship": {
+  "fx": [
+   0.499,
+   0.499,
+   0.4
+  ],
+  "h": 0.85,
+  "mo": "drive",
+  "src": "tr_landship.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "caveman": {
+  "fx": [
+   0.516,
+   0.441,
+   0.409
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "caveman.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "mammothKing": {
+  "fx": [
+   0.465,
+   0.487,
+   0.43
+  ],
+  "h": 1.2,
+  "mo": "heavy",
+  "src": "mammothKing.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "eg_pharaoh": {
+  "fx": [
+   0.509,
+   0.452,
+   0.441
+  ],
+  "h": 1.2,
+  "mo": "heavy",
+  "src": "eg_pharaoh.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "eg_spear": {
+  "fx": [
+   0.515,
+   0.473,
+   0.453
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "eg_spear.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "ro_tyrant": {
+  "fx": [
+   0.496,
+   0.494,
+   0.45
+  ],
+  "h": 1.2,
+  "mo": "drive",
+  "src": "ro_tyrant.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "ro_legion": {
+  "fx": [
+   0.53,
+   0.54,
+   0.465
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "ro_legion.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "tk_general": {
+  "fx": [
+   0.378,
+   0.399,
+   0.628
+  ],
+  "h": 1.1,
+  "mo": "heavy",
+  "src": "tk_general.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "tk_spear": {
+  "fx": [
+   0.404,
+   0.481,
+   0.427
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "tk_spear.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "nr_giant": {
+  "fx": [
+   0.583,
+   0.478,
+   0.519
+  ],
+  "h": 1.05,
+  "mo": "heavy",
+  "src": "nr_giant.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "nr_raider": {
+  "fx": [
+   0.449,
+   0.5,
+   0.544
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "nr_raider.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "ca_giant": {
+  "fx": [
+   0.461,
+   0.49,
+   0.587
+  ],
+  "h": 1.0,
+  "mo": "heavy",
+  "src": "ca_giant.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "ca_foot": {
+  "fx": [
+   0.458,
+   0.501,
+   0.557
+  ],
+  "h": 1.2,
+  "mo": "walk",
+  "src": "ca_foot.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ },
+ "sa_kraken": {
+  "fx": [
+   0.369,
+   0.364,
+   0.464
+  ],
+  "h": 1.0,
+  "mo": "crawl",
+  "src": "sa_kraken.png",
+  "f": 1,
+  "b": 1,
+  "s": 1
+ }
+}
