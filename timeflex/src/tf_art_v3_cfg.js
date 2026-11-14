@@ -77,3 +77,71 @@
   X3.sp_hopper = Object.assign({}, X3.sp_grunt, { b: 0.9, hat: { t: 'visor', c: '#2f8a6a', v: '#ffd84a' }, top: { t: 'armor', c: '#2f8a6a', c2: '#ffd84a' }, sleeve: '#2f8a6a', bot: { t: 'pants', c: '#1f5a4a' }, lean: 0.15 });
   X3.sp_cloak = Object.assign({}, X3.sp_grunt, { hat: { t: 'hood', c: '#3a2a5a' }, face: { glow: '#ff3ad0' }, top: { t: 'robe', c: '#3a2a5a' }, bot: { t: 'robe', c: '#3a2a5a' }, wpn: { t: 'dagger', c: '#2a1a4a', m: '#ff3ad0' } });
 })();
+// ---- v1.3 2차: 탈것, 배, 하늘, 유령, 특수 괴물 ----
+(function () {
+  function B(o) { return Object.assign({ rig: 'fly', kind: 'bird' }, o); }
+  X3.ptero = B({ c: '#8a6a4a', hc: '#8a6a4a', bk: '#d8b070', crest: '#c8352a', beak: 0.72, wing: 0.95, len: 0.95 });
+  X3.eg_vulture = B({ c: '#5a4a3a', hc: '#e0b8a0', bk: '#e8d0a0' });
+  X3.ro_eagle = B({ c: '#6a4a2a', hc: '#f3eee4', bk: '#e8b83a' });
+  X3.sa_parrot = B({ c: '#2fae6a', hc: '#e8433a', bk: '#3a3a3a', len: 0.7 });
+  X3.jo_crow = B({ c: '#2a2a34', bk: '#3a3a3a', len: 0.7 });
+  X3.nr_raven = B({ c: '#1a1a24', bk: '#3a3a3a', crest: '#3a3a4a' });
+  X3.ca_gargoyle = B({ c: '#8a8a90', hc: '#8a8a90', bk: '#6a6a70', crest: '#6a6a70', wing: 1.0 });
+  X3.tk_kite = { rig: 'fly', kind: 'kite', c: '#f3eee4', c2: '#c8352a' };
+  X3.nr_wisp = { rig: 'ghost', t: 'wisp', c: '#bfe8ff', glow: '#7fe6ff' };
+  X3.eg_ghost = { rig: 'ghost', t: 'sheet', c: '#f0ead8', glow: '#ffd84a', hat: { t: 'nemes', c: '#efe2b8', c2: '#3a6ab0' } };
+  X3.jo_egg = { rig: 'ghost', t: 'egg', c: '#f6f2ea' };
+  X3.jo_tal = { rig: 'ghost', t: 'tal', c: '#e8e0d0', glow: '#ff9a7a' };
+  // 배
+  function S(o) { return Object.assign({ rig: 'boat' }, o); }
+  X3.raft = S({ kind: 'raft', c: '#a07a4a', sail: '#d8c79a', mast: 0.55 });
+  X3.eg_boat = S({ kind: 'ship', c: '#c8a060', sail: '#f3eee4', mark: '#3a6ab0' });
+  X3.ro_galley = S({ kind: 'galley', c: '#8a5a32', sail: '#c8352a', flag: '#e8b83a' });
+  X3.tk_junk = S({ kind: 'junk', c: '#6a3a24', sail: '#c8a060' });
+  X3.nr_ship = S({ kind: 'longship', c: '#7a5a3a', sail: '#c8352a', mark: '#efe6d0' });
+  X3.ca_boat = S({ kind: 'ship', c: '#7a5a3a', sail: '#2f5fae', flag: '#e8b83a' });
+  X3.jo_ship = S({ kind: 'junk', c: '#4a3a2a', sail: '#e8e0cc' });
+  X3.sa_ship = S({ kind: 'ship', c: '#5a3a24', sail: '#2a2a2a', mark: 'skull', flag: '#2a2a2a', len: 1.1, mast: 0.85 });
+  X3.sa_ghostship = S({ kind: 'ship', c: '#3a5a5a', sail: '#9fe8d8', mark: 'skull', mast: 0.85 });
+  X3.sa_shark = S({ kind: 'shark' });
+  X3.tr_boat = S({ kind: 'gunboat', c: '#6a7a6a' }); X3.st_landing = S({ kind: 'gunboat', c: '#6a7a5a', len: 0.9 }); X3.wi_boat = S({ kind: 'gunboat', c: '#5a6a7a' });
+  X3.ju_boat = S({ kind: 'gunboat', c: '#4a6a3a', len: 0.85 }); X3.du_boat = S({ kind: 'gunboat', c: '#b8986a' }); X3.cy_boat = S({ kind: 'gunboat', c: '#2a2a3a', c2: '#ff3ad0' });
+  X3.st_sub = S({ kind: 'sub', c: '#4a5a6a' });
+  X3.ju_gunship = S({ kind: 'carrier', c: '#5a6a5a', len: 1.3, ht: 0.24 });
+  X3.sa_kraken = { rig: 'serp', c: '#8a3a3a', c2: '#e8b0a0', tent: '#8a3a3a' };
+  X3.jo_imugi = { rig: 'serp', c: '#2f6a5a', c2: '#d8e8b0', horn: '#efe2c2', whisk: '#efe2c2' };
+  // 땅 탈것
+  function V(o) { return Object.assign({ rig: 'veh' }, o); }
+  X3.ca_ram = V({ kind: 'cart', ram: 1, c: '#8a6a4a', c2: '#6a4a2a', len: 1.0, ht: 0.36 });
+  X3.sa_cart = V({ kind: 'cart', c: '#8a6a4a', cargo: '#6a4a2a', len: 0.9 });
+  X3.tk_tower = V({ kind: 'tower', c: '#8a6a4a', c2: '#c8352a', len: 0.7 }); X3.ca_tower = V({ kind: 'tower', c: '#7a6a5a', c2: '#2f5fae', len: 0.7 });
+  X3.tr_tractor = V({ kind: 'truck', c: '#8a7a54', cargo: '#6a5a3a', stack: 1 }); X3.tr_medic = V({ kind: 'truck', c: '#8a8a6a', cargo: '#e8e0cc', cross: 1 });
+  X3.st_supply = V({ kind: 'truck', c: '#6a7a6a', cargo: '#5a6a5a' }); X3.wi_truck = V({ kind: 'truck', c: '#5a6a4a', cargo: '#4a5a3a' }); X3.ju_truck = V({ kind: 'truck', c: '#4a6a3a', cargo: '#6a5a3a', camo: '#3a4a2a' });
+  X3.du_truck = V({ kind: 'truck', c: '#c8a874', cargo: '#a88a5a' }); X3.cy_fixer = V({ kind: 'truck', c: '#2a2a3a', cargo: '#3a3a4a', c2: '#ff3ad0' });
+  X3.st_tank = V({ kind: 'tank', c: '#6a7266', turret: 1, gunL: 0.55 }); X3.wi_tank = V({ kind: 'tank', c: '#5a6a4a', turret: 1, gunL: 0.6, camo: '#4a5a3a' });
+  X3.du_tank = V({ kind: 'tank', c: '#c8a874', turret: 1, gunL: 0.6, camo: '#a88a5a' }); X3.cy_tank = V({ kind: 'tank', c: '#2a2a3a', c2: '#ff3ad0', turret: 1, gunL: 0.6 });
+  X3.tr_mk1 = V({ kind: 'tank', c: '#6a6a4a', ht: 0.4, turret2: 1, stack: 1 }); X3.st_ht = V({ kind: 'apc', c: '#6a7266', gun: 1 }); X3.wi_apc = V({ kind: 'apc', c: '#5a6a4a', gun: 1, wheels: 3 }); X3.ju_apc = V({ kind: 'apc', c: '#4a6a3a', gun: 1, camo: '#3a4a2a', track: 1 });
+  X3.st_jeep = V({ kind: 'jeep', c: '#6a7a5a', gun: 1 }); X3.du_jeep = V({ kind: 'jeep', c: '#c8a874', gun: 1 });
+  X3.tr_landship = V({ kind: 'big', c: '#5a6a4a', len: 1.15, ht: 0.42, turret2: 1, stack: 1, wide: 0.4 });
+  X3.st_super = V({ kind: 'big', c: '#5a5a52', len: 1.15, ht: 0.38, turret: 1, gunL: 0.7, tw: 0.32, wide: 0.42 });
+  X3.du_king = V({ kind: 'big', c: '#b8986a', len: 1.15, ht: 0.38, turret: 1, gunL: 0.75, tw: 0.32, camo: '#9a7a4a', wide: 0.42 });
+  var biker = function (c, hat) { return { skin: '#d9a273', hat: hat, top: { t: 'coat', c: c }, sleeve: c, wpn: { t: 'smg', c: '#2a2a2a' } }; };
+  X3.wi_bike = V({ kind: 'bike', c: '#5a6a4a', rider: biker('#5a6a4a', { t: 'stahl', c: '#5a6a4a' }) }); X3.ju_bike = V({ kind: 'bike', c: '#4a6a3a', rider: biker('#4a6a3a', { t: 'bandana', c: '#3a3a2a' }) }); X3.cy_bike = V({ kind: 'bike', c: '#2a2a3a', rider: biker('#2a2a3a', { t: 'visor', c: '#2a2a3a', v: '#ff3ad0' }) });
+  // 하늘 탈것
+  X3.tr_plane = { rig: 'fly', kind: 'plane', c: '#8a7a54', len: 0.85 }; X3.st_fighter = { rig: 'fly', kind: 'plane', c: '#5a6a7a', len: 0.85 };
+  X3.tr_zep = { rig: 'fly', kind: 'zep', c: '#b8b0a2', len: 1.1 }; X3.st_bomber = { rig: 'fly', kind: 'bomber', c: '#6a7266', len: 1.05 };
+  X3.wi_fortress = { rig: 'fly', kind: 'bomber', c: '#5a6a7a', len: 1.0, jet: 1, sc: 1.0 };
+  X3.wi_heli = { rig: 'fly', kind: 'heli', c: '#5a6a4a' }; X3.ju_heli = { rig: 'fly', kind: 'heli', c: '#4a6a3a' };
+  X3.du_drone = { rig: 'fly', kind: 'drone', c: '#c8a874', len: 0.6 }; X3.cy_drone = { rig: 'fly', kind: 'drone', c: '#2a2a3a', eye: '#ff3ad0', len: 0.6 }; X3.cy_swarm = { rig: 'fly', kind: 'drone', c: '#3a3a4a', eye: '#ff3ad0', len: 0.5 };
+  X3.du_missile = { rig: 'fly', kind: 'missile', c: '#d8d8d0' }; X3.cy_missile = { rig: 'fly', kind: 'missile', c: '#3a3a4a', tip: '#ff3ad0' };
+  X3.sp_saucer = { rig: 'fly', kind: 'saucer', c: '#8a8aa0', pilot: 1, len: 0.8 }; X3.sp_ray = { rig: 'fly', kind: 'saucer', c: '#5a4a8a', beam: 1, len: 0.8 }; X3.sp_cruiser = { rig: 'fly', kind: 'saucer', c: '#4a3a6a', pilot: 1, len: 1.0 };
+  X3.sp_mother = { rig: 'fly', kind: 'saucer', c: '#3a2a5a', dome: '#9dff8a', beam: 1, len: 0.95, sc: 0.9 };
+  // 특수 괴물
+  X3.eg_scorp = { rig: 'bug', c: '#c8903a', len: 0.8 };
+  X3.sp_crusher = { rig: 'bug', c: '#5a4a8a', len: 0.9 }; X3.sp_walker = { rig: 'bug', c: '#3a2a6a', len: 1.0 };
+  X3.sp_blob = { rig: 'blob', c: '#9dff8a' };
+  X3.jo_bulga = { rig: 'beast', kind: 'bull', c: '#6a6a72', c2: '#9a9aa2', horns: '#c8c8d0', len: 0.9, tall: 0.24, thick: 0.24, head: 0.17, legw: 0.1, wide: 0.28, fur: 1 };
+  X3.ju_croc = { rig: 'beast', kind: 'rhino', c: '#4a6a3a', c2: '#a8b880', len: 1.0, tall: 0.12, thick: 0.14, head: 0.15, legw: 0.08, wide: 0.24, tail: true, tfr: false };
+  var robot = function (c, v, b) { return { b: b || 1.3, hs: 0.95, skin: '#9aa0a8', hat: { t: 'visor', c: c, v: v }, face: { glow: v }, top: { t: 'armor', c: c, c2: v }, sleeve: c, bot: { t: 'pants', c: x3c(c, -0.15) }, legs: x3c(c, -0.15), feet: { t: 'boot', c: x3c(c, -0.3) }, wpn: { t: 'blaster', c: '#3a3a3a', hold: 0.55, ang: 0.95 }, gait: 0.8 }; };
+  X3.du_mech = robot('#b8986a', '#ffb43c'); X3.cy_mech = robot('#3a3a4a', '#ff3ad0'); X3.cy_titan = robot('#2a2a3a', '#ff3ad0', 1.5);
+})();

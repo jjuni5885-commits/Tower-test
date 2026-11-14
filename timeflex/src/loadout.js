@@ -13,7 +13,7 @@ function loAll(withAdmin) {
   return out;
 }
 // 출전시킬 수 있는 탑: 가진 탑 + (관리자 모드) 전용 탑
-function loUsable(mi) { var own = loAll(true).filter(function (k) { return gcOwns(k) || (TOWERS[k].admin && SAVE.admin); }); if (mi == null) mi = LO.mi; if (typeof tfLoFilter === 'function' && mi != null && mi >= 0) own = tfLoFilter(own, mi); return own; }   // 타임플렉스: 시대 고증이면 그 판 시대까지의 탑만
+function loUsable(mi) { var own = loAll(true).filter(function (k) { return gcOwns(k) || SAVE.admin; }); if (mi == null) mi = LO.mi; if (typeof tfLoFilter === 'function' && mi != null && mi >= 0) own = tfLoFilter(own, mi); return own; }   // 타임플렉스: 시대 고증이면 그 판 시대까지의 탑만
 // 탑 그림(주소). 그림이 아직 없으면 ui_art.js towerIconURL이 탑 색 네모로 대신 그림
 function loIcon(k, L, B, px) { return towerIconURL(k, L || 1, B || 0, px || 64); }
 // 등급: c 일반, r 희귀, l 전설, a 관리자 전용, f 합체
@@ -60,14 +60,14 @@ function loOpen(mi, back) {
   if (back !== undefined) LO.back = back || null;
   var all = loAll(true), need = gcNeed(LO.mi), cur = LO.cur && TOWERS[LO.cur] ? LO.cur : null, M = MAPS[LO.mi];
   var h = '<div class="pt">출전 편성</div><div class="loSub">' + (M ? esc(chStageNo(M) + ' ' + M.name) + ', ' : '') + '가진 탑 가운데 <b>' + LO_MAX + '종</b>까지 골라 나갑니다</div>' +
-    '<div class="loRow big" id="loSlots">' + loSlotsHtml(LO.list) + '</div><div class="loGrid">';
+    '<div class="loRow big" id="loSlots">' + loSlotsHtml(LO.list) + '</div>' + (typeof tfLoModeHtml === 'function' ? tfLoModeHtml(LO.mi) : '') + '<div class="loGrid">';
   all.forEach(function (k) {
-    var T = TOWERS[k], own = gcOwns(k) || (T.admin && SAVE.admin), inn = LO.list.indexOf(k) >= 0, st = gcStar(k);
-    h += '<button class="loT t-' + loTier(k).id + (own ? '' : ' off') + (inn ? ' in' : '') + (cur === k ? ' cur' : '') + '" data-k="' + k + '"><img class="loI" src="' + loIcon(k, 3, 0, 72) + '" alt="">' + (own ? '' : '<img class="loLk" src="' + icon('lock', 32) + '" alt="">') +
+    var T = TOWERS[k], own = gcOwns(k) || SAVE.admin, inn = LO.list.indexOf(k) >= 0, st = gcStar(k), eb = typeof tfEraBlock === 'function' && tfEraBlock(k, LO.mi), et = typeof tfEraTag === 'function' ? tfEraTag(k, LO.mi) : '';
+    h += '<button class="loT t-' + loTier(k).id + (own ? '' : ' off') + (eb ? ' era' : '') + (inn ? ' in' : '') + (cur === k ? ' cur' : '') + '" data-k="' + k + '"><img class="loI" src="' + loIcon(k, 3, 0, 72) + '" alt="">' + (own ? '' : '<img class="loLk" src="' + icon('lock', 32) + '" alt="">') + (eb && et ? '<i class="loEra">' + esc(et) + '</i>' : '') +
       '<span>' + esc(T.short || T.name) + '</span>' + (need.indexOf(k) >= 0 ? '<i class="loNd">필요</i>' : '') + (st ? '<i class="loSt">' + st + '</i>' : '') + (fdSite(k) === 'water' ? '<img class="loW" src="' + uiIc2('water', 32) + '" alt="">' : '') + '</button>';
   });
   h += '</div><div class="loInfo">';
-  if (cur) { var T = TOWERS[cur]; h += '<img src="' + loIcon(cur, 3, 0, 72) + '" alt=""><div class="loIT"><b>' + esc(T.name) + '</b>' + loDomHtml(cur) + '<p>' + esc(T.desc || '') + '</p></div><button class="btn sm" id="loDet">상세</button>'; }
+  if (cur) { var T = TOWERS[cur], pf = typeof tfEraPerf === 'function' ? tfEraPerf(cur, LO.mi) : '', eb2 = typeof tfEraBlock === 'function' && tfEraBlock(cur, LO.mi); h += '<img src="' + loIcon(cur, 3, 0, 72) + '" alt=""><div class="loIT"><b>' + esc(T.name) + (typeof tfEraTag === 'function' && tfEraTag(cur) ? ' <i class="loEraT">' + esc(tfEraTag(cur)) + ' 시대</i>' : '') + '</b>' + loDomHtml(cur) + (eb2 ? '<p class="loWarn">시대가 맞지 않아 이 판에는 가지고 들어갈 수 없습니다</p>' : pf ? '<p class="loWarn">' + esc(pf) + '</p>' : '') + '<p>' + esc(T.desc || '') + '</p></div><button class="btn sm" id="loDet">상세</button>'; }
   else h += '<div class="loIT"><p>탑을 누르면 편성에 넣거나 뺍니다. 물 칸이 있는 판은 수상 탑, 하늘 적이 오는 판은 대공 탑을 챙기세요.</p></div>';
   h += '</div><div class="mbtns"><button class="btn" id="loAutoB">추천 편성</button><button class="btn gold" id="loOk">확인 (' + LO.list.length + ' / ' + LO_MAX + ')</button></div>';
   var sc = $('modal').querySelector('.loGrid'), st0 = UI.modalKind === 'lo' && sc ? sc.scrollTop : 0;
@@ -75,9 +75,10 @@ function loOpen(mi, back) {
   var Mo = $('modal'); if (st0) Mo.querySelector('.loGrid').scrollTop = st0;
   Mo.querySelectorAll('.loT').forEach(function (b) {
     b.onclick = function () {
-      var k = b.getAttribute('data-k'), T = TOWERS[k], own = gcOwns(k) || (T.admin && SAVE.admin), i = LO.list.indexOf(k);
+      var k = b.getAttribute('data-k'), T = TOWERS[k], own = gcOwns(k) || SAVE.admin, i = LO.list.indexOf(k), eb = typeof tfEraBlock === 'function' && tfEraBlock(k, LO.mi);
       LO.cur = k;
-      if (!own) { sfx('click', 0.3); toast(T.name + ': 아직 없는 탑입니다. 판 첫 승리 보상이나 소환으로 얻습니다', 2000); }
+      if (own && eb && i < 0) { sfx('warn', 0.4); toast(T.name + '은(는) ' + tfEraTag(k) + ' 시대 무기라 시대가 맞지 않아 이 판(' + (TF_ERA_NAME[tfEraOfMap(LO.mi)] || '') + ')에 가지고 들어갈 수 없습니다. 아래 \'다른 시대 무기 고르기\'를 켜면 쓸 수 있고, 성능은 이 시대에 맞게 바뀝니다', 3400); }
+      else if (!own) { sfx('click', 0.3); toast(T.name + ': 아직 없는 탑입니다. 판 첫 승리 보상이나 소환으로 얻습니다', 2000); }
       else if (i >= 0) { LO.list.splice(i, 1); sfx('click', 0.35); }
       else if (LO.list.length >= LO_MAX) { sfx('warn', 0.4); toast(LO_MAX + '종이 모두 찼습니다. 위 칸의 탑을 눌러 먼저 빼 주세요', 2000); }
       else { LO.list.push(k); sfx('click', 0.5); }
@@ -85,6 +86,7 @@ function loOpen(mi, back) {
     };
   });
   Mo.querySelectorAll('#loSlots .loS[data-k]').forEach(function (s) { s.onclick = function () { var i = LO.list.indexOf(s.getAttribute('data-k')); if (i >= 0) { LO.list.splice(i, 1); sfx('click', 0.35); loOpen(); } }; });
+  if (typeof tfLoModeBind === 'function') tfLoModeBind();
   if ($('loDet')) $('loDet').onclick = function () { sfx('click', 0.4); loDetail(cur, function () { loOpen(); }); };
   $('loAutoB').onclick = function () { sfx('click', 0.4); var M0 = MAPS[LO.mi], sv = SAVE.lo && M0 ? SAVE.lo[M0.id] : null; if (sv) delete SAVE.lo[M0.id]; LO.list = loAuto(LO.mi); if (sv) SAVE.lo[M0.id] = sv; loOpen(); toast('이 판에 맞는 탑으로 채웠습니다'); };
   $('loOk').onclick = function () {

@@ -154,7 +154,7 @@ function refreshStats(g) {
     t.buff = b;
     var s = towerStats(t.k, t.lvl, t.br), R = g.R, C = g.build[t.k] || {};
     var st = {}; for (var k in s) st[k] = s[k];
-    var dm = (1 + (R.tdmg[t.k] || 0) + b.dmg) * (1 + 0.06 * Math.min(5, (g.tStar && g.tStar[t.k]) || 0)), dot = (1 + R.dotMul) * (1 + 0.3 * (BF.g_dot || 0));
+    var dm = (1 + (R.tdmg[t.k] || 0) + b.dmg) * (1 + 0.06 * Math.min(5, (g.tStar && g.tStar[t.k]) || 0)) * (g.tfEraM && g.tfEraM[t.k] || 1), dot = (1 + R.dotMul) * (1 + 0.3 * (BF.g_dot || 0));
     if (st.dmg) st.dmg *= dm; if (st.dps0) { st.dps0 *= dm; st.dps1 *= dm; }
     if (st.zoneDps) st.zoneDps *= dm * dot; if (st.burn) st.burn *= dm * dot * (1 + 0.4 * (C.heat || 0)); if (st.poison) st.poison *= dm * dot;
     if (st.auraDps) st.auraDps *= dot;

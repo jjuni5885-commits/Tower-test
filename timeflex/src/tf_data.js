@@ -76,8 +76,22 @@ function tfBellK(k) { return k === 'bell' || !!(TOWERS[k] && TOWERS[k].bellLike)
 // ---------- 시대 고증과 시간 초월 ----------
 // era: 그 장 시대까지의 탑만(자동 편성). 보상 보통, 첫 승리 고증 보너스 보석 +5, 별 3개까지
 // time: 가진 모든 탑. 적 체력 쉬움 +30%, 보통 +50%, 어려움 +80%, 별 2개까지, 고증 보너스 없음
-var TF_MODES = { era: { name: '시대 고증', desc: '이 시대까지의 탑만 씁니다. 별 3개, 첫 승리 보석 +5' }, time: { name: '시간 초월', desc: '모든 시대의 탑을 씁니다. 대신 적 체력이 크게 늘고 별은 2개까지' } };
-var TF_TIME_HP = { easy: 1.3, normal: 1.5, hard: 1.8, endless: 1.5 };
+var TF_MODES = { era: { name: '시대 고증', desc: '이 시대까지의 탑만 가지고 들어갑니다. 별 3개, 첫 승리 보석 +5' }, time: { name: '시간 초월', desc: '다른 시대 탑도 고를 수 있습니다. 탑 성능은 이 시대에 맞게 바뀝니다(앞선 시대 탑은 약해지고 지난 시대 탑은 강해짐). 별은 2개까지' } };
+var TF_TIME_HP = { easy: 1.05, normal: 1.1, hard: 1.15, endless: 1.1 };   // v1.3: 시간 초월은 탑 성능을 시대에 맞추므로 적 체력은 조금만
+// v1.3 시간 초월 탑 성능: 그 시대 적의 단단함(장별 평균 적 체력 x 판 중간 웨이브 배율)의 비로 맞춤. (이 판 시대 / 탑 시대)^0.8, 0.3 ~ 3배
+var _tfPow = null;
+function tfEraPow(e) {
+  if (!_tfPow) {
+    _tfPow = {}; var acc = {};
+    MAPS.forEach(function (M, mi) { if (!/^c\d+s\d+$/.test(M.id || '')) return; var h = 0, n = 0; (M.pool || []).forEach(function (k) { var E = ENEMIES[k]; if (E && !E.boss) { h += E.hp; n++; } }); if (!n) return; var t = (h / n) * hpScale(mi, Math.floor((M.waves || 12) / 2), 'normal'); (acc[M.ch] = acc[M.ch] || []).push(t); });
+    for (var c in acc) { var a = acc[c]; _tfPow[c] = a.reduce(function (x, y) { return x + y; }, 0) / a.length; }
+  }
+  return _tfPow[e] || _tfPow[15] || 1000;
+}
+function tfEraMul(k, era) {
+  var te = tfEraOf(k); if (!(te >= 1 && te <= 15) || !era) return 1;
+  return clamp(Math.pow(tfEraPow(era) / tfEraPow(te), 0.8), 0.3, 3);
+}
 
 // ---------- 원시 시대 적 ----------
 (function () {

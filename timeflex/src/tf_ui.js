@@ -8,10 +8,15 @@ function tfModeOf() { return SAVE && SAVE.tfMode === 'time' ? 'time' : 'era'; }
 function tfEraOfMap(mi) { var M = MAPS[mi] || {}, C = fdChapter(M.ch || 1); return (C && C.era) || M.ch || 1; }
 // 출전 편성: 시대 고증이면 편성 창과 출전 모두 이 장 시대까지의 탑만(loadout.js loUsable이 tfLoFilter를 부름), 시간 초월이면 가진 모든 탑
 function tfLoFilter(own, mi) {
+  if (SAVE && SAVE.admin) return own;   // v1.3 관리자 모드: 모든 탑을 모든 판에
   if (tfModeOf() === 'time') return own;
   var era = tfEraOfMap(mi); return own.filter(function (k) { var T = TOWERS[k]; return T && !T.admin && !T.fusion && tfEraOf(k) <= era; });
 }
 function tfLoadout(mi) { return loGet(mi); }
+// 편성 창: 이 판에 시대가 맞는지(시대 고증 모드, 관리자는 늘 맞음)
+function tfEraBlock(k, mi) { if (SAVE && SAVE.admin) return 0; if (tfModeOf() === 'time' || mi == null || mi < 0) return 0; var T = TOWERS[k]; if (!T || T.admin || T.fusion) return 0; return tfEraOf(k) > tfEraOfMap(mi) ? 1 : 0; }
+function tfEraTag(k, mi) { var e = tfEraOf(k); return e >= 1 && e <= 15 ? (TF_ERA_NAME[e] || '') : '타 시대'; }
+function tfEraPerf(k, mi) { if (tfModeOf() !== 'time' || mi == null || mi < 0) return ''; var q = tfEraMul(k, tfEraOfMap(mi)); if (Math.abs(q - 1) < 0.05) return ''; return '이 시대에서 공격력 ' + (q < 1 ? '-' : '+') + Math.round(Math.abs(q - 1) * 100) + '%'; }
 function tfModeHtml(mi) {
   var m = tfModeOf(), era = tfEraOfMap(mi), M = MAPS[mi] || {};
   // v1.0: 물길 판은 배가 땅길과 따로 오니 물가에 탑을 세우라는 힌트(봇 시험에서 물가를 비우면 배가 다 새어 들어옴)
@@ -20,8 +25,26 @@ function tfModeHtml(mi) {
   var tl = (M.tips || []).concat(M.tips && M.tips.length ? wt.slice(0, 1) : wt);
   var tip = tl.length ? '<details class="tfTip"><summary>' + (M.tips && M.tips.length ? '관문 판 공략 힌트' : '물길 판 힌트') + '</summary>' + tl.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</details>' : '';
   return tip + '<div class="tfMode"><span class="sub">탑 규칙</span>' + ['era', 'time'].map(function (k) {
-    return '<button class="tfMb' + (k === m ? ' on' : '') + '" data-tfm="' + k + '"><b>' + TF_MODES[k].name + '</b><i>' + (k === 'era' ? (TF_ERA_NAME[era] || '') + ' 시대 탑만, 별 3' : '모든 탑, 적 체력 +' + Math.round((TF_TIME_HP.normal - 1) * 100) + '%, 별 2') + '</i></button>';
+    return '<button class="tfMb' + (k === m ? ' on' : '') + '" data-tfm="' + k + '"><b>' + TF_MODES[k].name + '</b><i>' + (k === 'era' ? (TF_ERA_NAME[era] || '') + ' 시대까지 탑만, 별 3' : '다른 시대 탑도, 성능은 시대에 맞춤, 별 2') + '</i></button>';
   }).join('') + '</div>';
+}
+// v1.3 편성 창: 시대 고증(기본)과 다른 시대 무기 고르기(시간 초월)를 따로 고름
+function tfLoModeHtml(mi) {
+  if (mi == null || mi < 0) return '';
+  var t = tfModeOf() === 'time', era = TF_ERA_NAME[tfEraOfMap(mi)] || '';
+  if (SAVE && SAVE.admin) return '<div class="loMode adm">관리자 모드: 모든 탑을 이 판에서 쓸 수 있습니다' + (t ? ' (시간 초월: 성능은 이 시대에 맞춤)' : '') + '</div>';
+  return '<div class="loMode"><button class="loMB' + (t ? '' : ' on') + '" data-m="era"><b>이 시대 무기만</b><i>' + esc(era) + ' 시대까지, 별 3</i></button><button class="loMB' + (t ? ' on' : '') + '" data-m="time"><b>다른 시대 무기 고르기</b><i>성능은 이 시대에 맞게 바뀜, 별 2</i></button></div>';
+}
+function tfLoModeBind() {
+  document.querySelectorAll('#modal .loMB').forEach(function (b) {
+    b.onclick = function () {
+      var m = b.getAttribute('data-m'); if (m === tfModeOf()) return;
+      SAVE.tfMode = m; saveNow(); sfx('click', 0.45);
+      if (m === 'era') LO.list = LO.list.filter(function (k) { return !tfEraBlock(k, LO.mi); });
+      toast(m === 'time' ? '다른 시대 무기도 고를 수 있습니다. 탑 성능은 이 시대에 맞게 바뀝니다(앞선 시대 탑은 약해지고 지난 시대 탑은 강해짐). 별은 2개까지' : '이 시대까지의 무기만 가지고 들어갑니다. 별 3개', 3200);
+      loOpen();
+    };
+  });
 }
 function tfModeBind(mi, reopen) {
   var box = document.querySelector('#modal .tfMode'); if (!box) return;
@@ -32,7 +55,11 @@ function tfModeBind(mi, reopen) {
 // 전투 시작 때: 모드와 체력 배수를 게임에 적음 (이어하기는 저장된 모드)
 function tfApplyMode(g, resume) {
   var m = resume && SAVE.mid && SAVE.mid.tfMode ? SAVE.mid.tfMode : tfModeOf();
-  g.tfMode = m; g.tfHp = m === 'time' ? (TF_TIME_HP[g.dk] || 1.5) : 1;
+  g.tfMode = m; g.tfHp = m === 'time' ? (TF_TIME_HP[g.dk] || 1.1) : 1;
+  g.tfEraM = null;
+  // v1.3 관리자 모드: 전장에서 모든 탑(6단계, 합체 포함)을 바로 씀. 편성 8종 제한 없음
+  if (SAVE && SAVE.admin && typeof admTowerKeys === 'function') { g.towersOk = admTowerKeys(true); g.maxLv = 6; g.fuse = true; g.fuseOk = true; g.admin = true; }
+  if (m === 'time' && g.M && !(SAVE && SAVE.admin && SAVE.admOpt && SAVE.admOpt.raw)) { var era = tfEraOfMap(g.mi); g.tfEraM = {}; for (var k in TOWERS) { var q = tfEraMul(k, era); if (q !== 1) g.tfEraM[k] = q; } if (typeof refreshStats === 'function' && g.towers) refreshStats(g); }
   if (SAVE.mid && !resume) SAVE.mid.tfMode = m;
 }
 // 결과: 시대 고증 첫 승리는 보석 +5 (판마다 한 번)

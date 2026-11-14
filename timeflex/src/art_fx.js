@@ -169,7 +169,7 @@ function fxVig(col) {
 
 // ---------- 투사체 그림 ----------
 // 사탕 화살: [자루, 자루 무늬, 깃, 촉, 촉 모양]
-var FX_ARW = { arrow: ['#fff0d8', '#ff8fc0', '#b9a2ff', '#ff5d9e', 'heart'], arrowG: ['#fff3b0', '#ff9a6a', '#ff8fc0', '#ffd23a', 'star'], arrowS: ['#eef8ff', '#7cc8ff', '#7cc8ff', '#ffffff', 'star'], arrowR: ['#ffe4ee', '#ff5d9e', '#ff5d9e', '#ff3d7f', 'heart'] };
+var FX_ARW = { arrow: ['#f6ead2', '#c8352a', '#8a5a32', '#d7dbe0', 'tip'], arrowG: ['#fff3b0', '#e8a640', '#8a5a32', '#ffd23a', 'tip'], arrowS: ['#eef8ff', '#7cc8ff', '#6a7a8a', '#ffffff', 'tip'], arrowR: ['#ffe8d8', '#c8352a', '#6a3a24', '#e0533a', 'tip'] };   // v1.3: 하트, 별 촉 대신 쇠 화살촉
 function fxArrow(S, kind) {
   var S1 = S * 1.25, long = kind === 'arrowS', L = S1 * (long ? 0.47 : 0.42), H = S1 * 0.17, m = H / 2, P = FX_ARW[kind], pad = 3;
   var c = mkC(L + pad * 2, H + pad * 2), x = cx2(c); x.translate(pad, pad); x.lineCap = 'round'; x.lineJoin = 'round';
@@ -187,8 +187,9 @@ function fxArrow(S, kind) {
   // 촉: 하트 또는 별
   x.fillStyle = P[3]; x.strokeStyle = fxOl(P[3] === '#ffffff' ? '#7cc8ff' : P[3]); x.lineWidth = Math.max(1, S1 * 0.01);
   if (P[4] === 'heart') { var hs = S1 * (kind === 'arrowR' ? 0.048 : 0.044); x.save(); x.translate(L - hs * 1.05, m); x.rotate(-Math.PI / 2); fxHeartPath(x, 0, 0, hs); x.fill(); x.stroke(); x.restore(); fxShine(x, L - hs * 1.25, m - hs * 0.45, hs * 0.28); }
+  else if (P[4] === 'tip') { var tr = S1 * (long ? 0.06 : 0.052); x.beginPath(); x.moveTo(L + tr * 0.2, m); x.lineTo(L - tr * 1.5, m - tr * 0.75); x.lineTo(L - tr * 1.1, m); x.lineTo(L - tr * 1.5, m + tr * 0.75); x.closePath(); x.fill(); x.stroke(); }
   else { var sr = S1 * (long ? 0.062 : 0.054); fxStarPath(x, L - sr * 0.95, m, sr, sr * 0.5, 5, 0); x.fill(); x.stroke(); fxShine(x, L - sr * 1.1, m - sr * 0.3, sr * 0.25); }
-  var o = outlineC(c, Math.max(1, S * 0.011), '#4a2a5a', 0.85);
+  var o = outlineC(c, Math.max(1, S * 0.011), '#2a1810', 0.85);
   return spr(o, pad + L / 2, pad + m);
 }
 // 둥근 사탕 공(돌 대신): 바람개비 줄무늬가 돌고 반짝이는 따로 그림
@@ -468,7 +469,7 @@ function fxSkinP() { var s = typeof SAVE !== 'undefined' && SAVE && SAVE.skin &&
 // ---------- 스티커 글자 (의성어, 콤보, 피해 숫자) ----------
 // 굵은 흰 테두리 + 자두색 바깥 선 + 아래 그림자 + 사탕 색 채움 + 윗부분 광택. 한 번 구워 두고 다시 씀
 // 색 이름: [위, 가운데, 아래], 'rain'은 무지개(왼쪽에서 오른쪽)
-var FX_STY = { pink: ['#ffd6e8', '#ff5d9e', '#e0337a'], lemon: ['#fff7c2', '#ffcf2e', '#ff9a1a'], mint: ['#d8fff0', '#4fdcae', '#1fae84'], sky: ['#dcf2ff', '#5cb6ff', '#2f7fe6'], lav: ['#f0e6ff', '#a98bff', '#7550ee'], peach: ['#ffe6d2', '#ff9a5e', '#ff6438'], hot: ['#ffd0e2', '#ff3d84', '#d01f68'] };
+var FX_STY = { iron: ['#fff1d6', '#e8a640', '#a8542a'], steel: ['#f4f8fb', '#b9c4ce', '#5f6e7c'], bronze: ['#fff0c8', '#d8a050', '#8a5a20'], blood: ['#ffd9c8', '#e0533a', '#8a2416'], pink: ['#ffd6e8', '#ff5d9e', '#e0337a'], lemon: ['#fff7c2', '#ffcf2e', '#ff9a1a'], mint: ['#d8fff0', '#4fdcae', '#1fae84'], sky: ['#dcf2ff', '#5cb6ff', '#2f7fe6'], lav: ['#f0e6ff', '#a98bff', '#7550ee'], peach: ['#ffe6d2', '#ff9a5e', '#ff6438'], hot: ['#ffd0e2', '#ff3d84', '#d01f68'] };
 var FX_STK = {}, FX_STKN = 0, FX_MX = null, FX_NSTK = 0;
 var FX_RAINS = ['#ff3d8b', '#ff7a2e', '#ffb800', '#22c983', '#2f8cff', '#8656ff']; // 글자용 진한 무지개 (흰 테두리 위에서도 또렷하게)
 function fxFontOk(fs) { try { return !document.fonts || !document.fonts.check || document.fonts.check(fs + 'px CUTE'); } catch (e) { return true; } }
@@ -478,10 +479,11 @@ function fxStkDraw(c, txt, fs, sty) {
   c.width = Math.ceil(tw + pad * 2); c.height = Math.ceil(fs * 1.28 + pad * 2 + sh);
   x.font = font; x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round';
   var cx = c.width / 2, cy = (c.height - sh) / 2 + Math.round(fs * 0.05), g, i;
-  x.strokeStyle = 'rgba(58,20,72,0.4)'; x.lineWidth = lw * 4.8; x.strokeText(txt, cx, cy + sh);
-  x.strokeStyle = '#4a2a5a'; x.lineWidth = lw * 4.4; x.strokeText(txt, cx, cy);
-  x.strokeStyle = '#ffffff'; x.lineWidth = lw * 2.8; x.strokeText(txt, cx, cy);
-  if (sty === 'rain') { g = x.createLinearGradient(cx - tw / 2, 0, cx + tw / 2, 0); for (i = 0; i < FX_RAINS.length; i++) g.addColorStop(i / (FX_RAINS.length - 1), FX_RAINS[i]); }
+  x.strokeStyle = 'rgba(30,16,8,0.45)'; x.lineWidth = lw * 4.8; x.strokeText(txt, cx, cy + sh);
+  x.strokeStyle = '#2a1810'; x.lineWidth = lw * 4.4; x.strokeText(txt, cx, cy);
+  x.strokeStyle = '#fff3df'; x.lineWidth = lw * 2.8; x.strokeText(txt, cx, cy);
+  if (sty === 'rain') sty = 'iron';   // v1.3: 무지개 글자 없앰
+  if (false) { g = x.createLinearGradient(cx - tw / 2, 0, cx + tw / 2, 0); for (i = 0; i < FX_RAINS.length; i++) g.addColorStop(i / (FX_RAINS.length - 1), FX_RAINS[i]); }
   else { var P = FX_STY[sty] || FX_STY.pink; g = x.createLinearGradient(0, cy - fs * 0.45, 0, cy + fs * 0.42); g.addColorStop(0, P[0]); g.addColorStop(0.42, P[1]); g.addColorStop(1, P[2]); }
   x.fillStyle = g; x.fillText(txt, cx, cy);
   x.save(); x.beginPath(); x.rect(0, 0, c.width, cy - fs * 0.1); x.clip(); x.fillStyle = 'rgba(255,255,255,0.3)'; x.fillText(txt, cx, cy); x.restore();

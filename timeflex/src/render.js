@@ -58,11 +58,11 @@ function fxShake(v) { RD.shake = Math.max(RD.shake, v * 0.85); }
 // ---------- v12 타격감 손잡이 ----------
 // 캔버스에 쓰는 글자 (다국어 파일이 나중에 이 값을 바꿈). {n}은 숫자 자리. 크기는 measureText로 재서 맞춤
 var FX_WORDS = {
-  kill: ['뿅!', '퐁!', '뽁!', '톡!'],  // 작은 적 처치
-  big: ['펑!', '쾅!', '뻥!'],  // 큰 적 처치
-  boss: '해냈다!',  // 우두머리 처치
-  combo: ['더블!', '트리플!', '굉장해!', '대박!', '최고야!', '전설이야!'],  // 연속 처치 2, 3, 4, 5~7, 8~11, 12 이상
-  comboN: '{n}콤보'  // 연속 4 이상일 때 뒤에 붙음
+  kill: ['퍽!', '탁!', '쿵!'],  // 작은 적 처치 (v1.3: 귀염 의성어 대신 타격음)
+  big: ['쾅!', '와르르!', '콰앙!'],  // 큰 적 처치
+  boss: '우두머리 격파!',  // 우두머리 처치
+  combo: ['2연속!', '3연속!', '맹공!', '파죽지세!', '일기당천!', '천하무적!'],  // 연속 처치 2, 3, 4, 5~7, 8~11, 12 이상
+  comboN: '{n}연속'  // 연속 4 이상일 때 뒤에 붙음
 };
 // 설정: '화면 흔들림'을 끄면 흔들림, 딤, 화면 번쩍임도 끔. '피해 숫자'를 끄면 글자 스티커도 끔
 function fxScreenOk() { return !(SAVE && SAVE.set && SAVE.set.shake === false); }
@@ -117,7 +117,7 @@ function fxKillWord(e, vh, z, bigK, dl) {
   if (!fxWordsOn() || FX_NSTK >= (RD.lowFx ? 2 : 5)) return;
   var S = RD.view.S, w = fxPick(bigK ? FX_WORDS.big : FX_WORDS.kill), fs = Math.round(S * clamp(0.36 + vh * 0.1, 0.4, 0.68));
   FX_NSTK++;
-  addP({ k: 'stk', img: fxSticker(w, fs, bigK ? 'lemon' : fxPick(['pink', 'sky', 'mint', 'lav', 'peach']), S * 2.2), x: Math.max(0.6, e.x - 0.28 - vh * 0.12), y: e.y, z: z, rot: -0.12 - Math.random() * 0.16, life: (bigK ? 0.95 : 0.78) + dl, dl: dl, rise: 0.3 });
+  addP({ k: 'stk', img: fxSticker(w, fs, bigK ? 'blood' : fxPick(['iron', 'steel', 'bronze']), S * 2.2), x: Math.max(0.6, e.x - 0.28 - vh * 0.12), y: e.y, z: z, rot: -0.12 - Math.random() * 0.16, life: (bigK ? 0.95 : 0.78) + dl, dl: dl, rise: 0.3 });
 }
 // 1초(게임 시간) 안에 잇달아 처치하면 콤보 글자. 새 글자가 뜨면 앞 글자는 빨리 사라짐
 function fxCombo(g, e, z) {
@@ -129,12 +129,13 @@ function fxCombo(g, e, z) {
   var W = FX_WORDS.combo, n = C.n, i = n <= 2 ? 0 : n === 3 ? 1 : n === 4 ? 2 : n <= 7 ? 3 : n <= 11 ? 4 : 5, txt = W[Math.min(i, W.length - 1)] + (n >= 4 ? ' ' + String(FX_WORDS.comboN).replace('{n}', n) : '');
   if (C.p && !C.p.dead) C.p.out = C.p.t;
   var S = RD.view.S; FX_NSTK++;
-  C.p = addP({ k: 'stk', img: fxSticker(txt, Math.round(S * (0.4 + Math.min(0.14, n * 0.01))), 'rain', S * 3.6), x: clamp(e.x, 1.4, RD.cols - 1.4), y: e.y, z: Math.min(z + 0.75, Math.max(0.2, e.y - 1.0)), rot: (Math.random() - 0.5) * 0.16, life: 1.05, rise: 0.4 }); // 위 막대에 가리지 않게
+  C.p = addP({ k: 'stk', img: fxSticker(txt, Math.round(S * (0.4 + Math.min(0.14, n * 0.01))), n >= 8 ? 'blood' : 'iron', S * 3.6), x: clamp(e.x, 1.4, RD.cols - 1.4), y: e.y, z: Math.min(z + 0.75, Math.max(0.2, e.y - 1.0)), rot: (Math.random() - 0.5) * 0.16, life: 1.05, rise: 0.4 }); // 위 막대에 가리지 않게
   return n;
 }
 // 화면 가득 색종이 (우두머리 처치): 하늘에서 팔랑팔랑
 function fxConfettiRain(n) {
-  for (var i = 0; i < n; i++) { var st = i % 4 === 0, ht = i % 9 === 4, dl = Math.random() * 0.6; addP({ k: st ? 'star' : ht ? 'candy' : 'conf', x: Math.random() * RD.cols, y: Math.random() * (RD.rows + 1) - 0.5, z: 3.5 + Math.random() * 5.5, vx: (Math.random() - 0.5) * 0.7, vy: 0, vz: -0.4 - Math.random() * 0.8, grav: 1.6, dr: 0.6, life: 2.5 + Math.random() * 0.9 + dl, dl: dl, size: st ? 0.12 + Math.random() * 0.05 : ht ? 0.11 : 0.09 + Math.random() * 0.04, col: fxPick(FX_CANDY), rot: Math.random() * 6, vr: (Math.random() - 0.5) * 8, fl: 7 + Math.random() * 8, ph: Math.random() * 6 }); }
+  // v1.3: 색종이, 사탕 대신 불티와 재가 흩날림
+  for (var i = 0; i < n; i++) { var em = i % 3 === 0, dl = Math.random() * 0.6; addP({ k: em ? 'twk' : 'conf', x: Math.random() * RD.cols, y: Math.random() * (RD.rows + 1) - 0.5, z: 3.5 + Math.random() * 5.5, vx: (Math.random() - 0.5) * 0.6, vz: -0.6 - Math.random() * 0.8, dr: 0.5, life: 1.8 + Math.random() * 1.2 + dl, dl: dl, size: em ? 0.06 + Math.random() * 0.05 : 0.04 + Math.random() * 0.04, col: em ? fxPick(['#ffb43c', '#ff7a2e', '#ffe08a']) : fxPick(['#5a4a3a', '#8a7a6a', '#3a3028']), rot: Math.random() * 6, vr: (Math.random() - 0.5) * 6, fl: 8 + Math.random() * 6, ph: Math.random() * 6 }); }
 }
 // 우두머리가 크게 맞으면 화면 가장자리가 반짝 (0.6초에 한 번까지)
 function fxBossHit(en, a) {
@@ -351,6 +352,14 @@ function dmgFx(e) {
 // 처치 때 솜구름에 살짝 섞는 적별 빛깔
 var FX_POOF = { goblin: '#fff3b0', orc: '#ffd9c2', shaman: '#ffe0bf', troll: '#d4f5e6', grumsh: '#ffdcc8', skeleton: '#fff8f0', knight: '#e6dcff', stalker: '#e6d4ff', wraith: '#f4f0ff', warlock: '#d6defc', barkan: '#e6d6ff', wolf: '#d4ecff', bat: '#ffd6ea', wyvern: '#ffd0da', spider: '#fff4dc', arachne: '#eedcff', golemL: '#cff3ef', golemM: '#cff3ef', golemS: '#cff3ef', wagon: '#ffd6d0', yotun: '#dcf3ff', yotun2: '#dcf3ff', iceslime: '#d4fbf8', ember: '#ffe0c0', mirror: '#ebe6ff', bunny: '#fff8c8', guard: '#e4f8c8', twinking: '#ffe6d0' };
 var EL_COL = { fire: '#ff8a3c', ice: '#7cc8ff', bolt: '#ffd23a', poison: '#8fdc4f' }; // 새 적 대표색(v1.2)
+// v1.3 시대 분위기 처치 재료: 1~8장 흙먼지와 나무, 돌 파편, 9~14장 화약 연기와 쇠 파편, 15장 에너지 불꽃. 탈것은 쇠 파편과 검은 연기
+function fxEraKit(g, e) {
+  var ch = (g && g.M && g.M.ch) || 1, E = ENEMIES[e.k] || {}, art = String(E.art || e.k), mech = /tank|truck|jeep|apc|ship|boat|heli|jet|drone|mech|missile|sub|bomber|destroyer|carrier|fortress|landship|cart|ram|titan|saucer|walker|zep|plane|tractor|biker|bike/.test(art + ' ' + e.k);
+  if (ch >= 15) return { pop: '#e8ffe0', dust: ['#9a8ab8', '#6a5a8a', '#c8b8e8'], ring: '#9dff8a', spark: ['#9dff8a', '#d07aff', '#ffffff'], bits: ['#5a4a8a', '#3a2a6a', '#9dff8a'] };
+  if (mech || ch >= 9) return { pop: '#ffe2b0', dust: ['#7a746a', '#9a948a', '#5a5650'], ring: '#b8b0a2', spark: ['#ffd23a', '#ff8a2e', '#fff0c0'], bits: ['#4a4a4a', '#7a7a7a', '#2a2a2a', '#a8542a'] };
+  if (e.fly) return { pop: '#fff3df', dust: ['#e8e0d0', '#d0c8b8', '#f4eee2'], ring: '#d8c8a8', spark: ['#ffd23a', '#fff0c0'], bits: ['#6a5a4a', '#8a7a6a', '#3a3028'] };
+  return { pop: '#fff3df', dust: ['#cdb48a', '#b89a6a', '#e2d2b0'], ring: '#c8a878', spark: ['#ffd23a', '#ff9a3a', '#fff0c0'], bits: ['#8a6a4a', '#6a5a4a', '#a08060', '#5a4030'] };
+}
 // 처치: 꾹 눌렸다가 쭉 늘어나며 펑! 솜구름, 별, 하트, 색종이 (큰 적과 우두머리는 더 크게)
 function killFx(e, g) {
   var S = RD.view.S, fr = enemyFrames(e.k, S), E = ENEMIES[e.k], vh = enVis(E), cz = fxBodyZ(e), bigK = vh >= 1.6 || e.boss;
@@ -359,16 +368,13 @@ function killFx(e, g) {
   var ruK = ruDie(e, g, vh, cz, bigK, dl);
   if (!ruK) {
   addP({ k: 'poof', x: e.x, y: e.y, spr: fr.fr[0], wh: fr.wh[0], face: e.face, fly: e.fly, top: ruTopK(e.k), ang: Math.atan2(e.diry || 0, e.dirx || 1), life: pl });
-  // 꾹 → 펑: 흰 충격, 솜구름, 무지개 고리 두 겹, 별, 하트, 사탕, 색종이, 의성어 스티커
-  fxPop(e.x, e.y, cz, 0.28 + vh * 0.2, '#ff8fc0', 0.14, dl);
-  fxPuffs(e.x, e.y, cz, bigK ? 10 : 6, pcs, 1.5 + vh * 1.0, 0.16 + vh * 0.095, 0.52, dl);
-  var kbz = fxBusy() && !bigK;
-  fxSRing(e.x, e.y, 0.04, 0.34 + vh * 0.3, 'rainbow', 0.4, 1, dl);
-  if (!kbz) fxSRing(e.x, e.y, 0.04, 0.6 + vh * 0.42, 'rainbow', 0.48, 1, dl + 0.07);
-  fxStars(e.x, e.y, cz, bigK ? 6 : 3, FX_CANDY, 1.6 + vh * 0.6, 0.09 + vh * 0.02, 0.7, dl);
-  fxHearts(e.x, e.y, cz + 0.1, bigK ? 3 : Math.random() < 0.5 ? 2 : 1, ['#ff8fc0', '#ff5d9e', '#ffb0d0'], 0.08 + vh * 0.02, 0.8, dl);
-  fxCandies(e.x, e.y, cz, bigK ? 4 : kbz ? 1 : 2, 1.5 + vh * 0.5, 0.075 + vh * 0.012, dl);
-  fxConfetti(e.x, e.y, cz, bigK ? 12 : kbz ? 3 : 5, 1.8 + vh * 0.6, 0.05 + vh * 0.01, 1.0, FX_CANDY, dl);
+  // v1.3 시대 분위기: 꾹 → 흙먼지(현대는 화약 연기), 먼지 고리, 불티, 나무, 돌, 쇠 파편 (하트, 사탕, 무지개 없음)
+  var FK = fxEraKit(g, e), kbz = fxBusy() && !bigK;
+  fxPop(e.x, e.y, cz, 0.26 + vh * 0.18, FK.pop, 0.12, dl);
+  fxPuffs(e.x, e.y, cz, bigK ? 10 : 6, FK.dust, 1.3 + vh * 0.9, 0.15 + vh * 0.09, 0.6, dl);
+  fxSRing(e.x, e.y, 0.04, 0.34 + vh * 0.3, FK.ring, 0.38, 1, dl);
+  fxTwinkles(e.x, e.y, cz, bigK ? 5 : kbz ? 1 : 3, FK.spark, 1.4 + vh * 0.5, 0.06 + vh * 0.015, 0.45, dl);
+  fxConfetti(e.x, e.y, cz, bigK ? 9 : kbz ? 2 : 4, 1.6 + vh * 0.6, 0.045 + vh * 0.012, 0.85, FK.bits, dl);
   }
   // 콤보가 이어지면(3 이상) 콤보 글자가 대신함 (글자가 겹쳐 지저분하지 않게)
   if (fxCombo(g, e, fxTopZ(e)) <= 2 && !e.boss) fxKillWord(e, vh, cz + 0.1, bigK, dl * 0.6);
@@ -379,15 +385,16 @@ function killFx(e, g) {
   if (e.boss && ruBossDie(e, g, vh, cz, dl)) { /* 2~4장 우두머리: 챕터 분위기 연출 (render_units.js) */ }
   else if (e.boss) {
     // 우두머리: 크게 펑 + 짧은 슬로모션 + 화면 가득 색종이 + 큰 축하 글자
-    fxPuffs(e.x, e.y, cz, 10, pcs, 3.2 + vh, 0.3 + vh * 0.06, 0.62, dl + 0.04); fxStars(e.x, e.y, cz, 6, FX_CANDY, 3, 0.14, 0.9, dl); fxShake(0.2); RD.hitStop = 0.14;
-    if (fxScreenOk()) { RD.flash = 0.24; RD.flashCol = '#fff0f8'; }
-    fxConfetti(e.x, e.y, cz + 0.3, 16, 3, 0.07, 1.4, FX_CANDY, dl); fxHearts(e.x, e.y, cz + 0.3, 3, ['#ff8fc0', '#ff5d9e'], 0.13, 1.1, dl);
-    fxSRing(e.x, e.y, 0.04, 1.6 + vh * 0.4, 'rainbow', 0.7, 1, dl + 0.14); fxStarRing(e.x, e.y, cz, fxN(10), 1.4, 0.15, null, dl);
-    RD.fxSlow = RD.fxSlowT = 1.1; fxConfettiRain(fxN(72));
-    if (fxWordsOn()) { FX_NSTK++; addP({ k: 'stk', img: fxSticker(FX_WORDS.boss, Math.round(S * 0.8), 'rain', S * 6.4), x: clamp(e.x, 2.2, RD.cols - 2.2), y: e.y, z: Math.min(cz + 1.1, Math.max(0.2, e.y - 1.2)), rot: -0.07, life: 1.9, rise: 0.5, dl: dl, big: 1 }); }
+    var FB = fxEraKit(g, e);
+    fxPuffs(e.x, e.y, cz, 12, FB.dust, 3.2 + vh, 0.3 + vh * 0.06, 0.8, dl + 0.04); fxTwinkles(e.x, e.y, cz, 10, FB.spark, 3, 0.12, 0.9, dl); fxShake(0.24); RD.hitStop = 0.14;
+    if (fxScreenOk()) { RD.flash = 0.24; RD.flashCol = '#fff3df'; }
+    fxConfetti(e.x, e.y, cz + 0.3, 18, 3, 0.07, 1.4, FB.bits, dl);
+    fxSRing(e.x, e.y, 0.04, 1.6 + vh * 0.4, FB.ring, 0.7, 1, dl + 0.14); fxSRing(e.x, e.y, 0.04, 1.0 + vh * 0.3, FB.ring, 0.5, 1, dl + 0.05);
+    RD.fxSlow = RD.fxSlowT = 1.1; fxConfettiRain(fxN(56));
+    if (fxWordsOn()) { FX_NSTK++; addP({ k: 'stk', img: fxSticker(FX_WORDS.boss, Math.round(S * 0.8), 'blood', S * 6.4), x: clamp(e.x, 2.2, RD.cols - 2.2), y: e.y, z: Math.min(cz + 1.1, Math.max(0.2, e.y - 1.2)), rot: -0.07, life: 1.9, rise: 0.5, dl: dl, big: 1 }); }
     vib([50, 40, 90]);
   }
-  else if (bigK) { fxShake(0.08); if (!(RD.hitStopCd > 0)) { RD.hitStop = 0.05; RD.hitStopCd = 0.45; } if (fxScreenOk() && !(RD.flash > 0.08)) { RD.flash = 0.08; RD.flashCol = '#fff6fb'; } }
+  else if (bigK) { fxShake(0.08); if (!(RD.hitStopCd > 0)) { RD.hitStop = 0.05; RD.hitStopCd = 0.45; } if (fxScreenOk() && !(RD.flash > 0.08)) { RD.flash = 0.08; RD.flashCol = '#fff6e8'; } }
 }
 // ---------- 금화 모으기 (v4.3) ----------
 // 금화가 생기면(처치, 판매, 조폐소, 장애물, 조기 호출) 그 자리에서 금화가 튀어 오르고 +N 글자가 뜬 뒤, 위쪽 금화 칸으로 날아가 닿을 때 숫자가 올라감
