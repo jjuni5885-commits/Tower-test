@@ -1,5 +1,5 @@
 // ===== util.js : 수학, 난수, 노이즈, 색 =====
-var VERSION = 'v1.2';
+var VERSION = 'v1.4';
 // ---------- v2.0 등록 고리 (docs/ENGINE.md). 어느 파일에서든 끼울 수 있게 맨 앞 파일에 둠. 등록돼 있으면 그것을 쓰고 없으면 기존 동작 ----------
 // 논리: TW_ACT[kind](g, t, dt), TW_INIT[kind](g, t), TW_SOLD[kind](g, t), EN_AB[적 키] = { spawn, tick, hurt, die }, PROJ_UPD[p.kind](g, p, dt) → true면 끝, UNIT_UPD[u.kind](g, u, dt) → true면 없앰, RULES[규칙 키] = { init, tick, ... }
 // 그리기: PROJ_DRAW[p.kind](x, g, p, S, time), UNIT_DRAW[u.kind](x, g, u, S, time), FX_EV[사건 이름](g, ev). 덮개는 함수 EN_OVER, TW_OVER를 정의하면 불림

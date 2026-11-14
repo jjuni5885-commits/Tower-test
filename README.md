@@ -21,13 +21,14 @@
 - 각 게임 폴더의 `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`가 크롬 '홈 화면에 추가'(전체 화면 앱)를 담당합니다. `src/template.html` 머리에 연결 줄이 들어 있어 다시 빌드해도 유지됩니다.
 - 모든 페이지 맨 앞의 짧은 스크립트가 카카오톡 등 앱 안 브라우저에서 열리면 크롬(외부 브라우저)으로 다시 엽니다.
 
-## 고치는 방법 (Claude에게 맡길 때)
+## 고치는 방법 (Claude가 직접 고쳐 올림)
 
-1. 고칠 내용은 `src/` 안의 파일을 고칩니다. 빌드본(`index.html`)을 직접 고치지 않습니다.
-2. 빌드: 해당 게임 폴더의 `src`에서 `node tools/build.js` → `out/index.html`이 생김
-3. 시험: `src/tools/README.txt`와 `src/docs/*.md`의 시험 명령을 돌림
-4. `out/index.html`을 게임 폴더의 `index.html`로 덮어쓰고 커밋. 1~2분 뒤 같은 링크에 반영됨
-5. 커밋 메시지에 버전과 바뀐 점을 적음(예: `타임플렉스 v1.3: 원화 16종 추가`)
+1. 고칠 내용은 `timeflex/src/` 안의 파일을 고칩니다. 빌드본(`timeflex/index.html`)을 직접 고치지 않습니다.
+2. 빌드: `cd timeflex/src && node tools/build.js` → `timeflex/out/index.html`(커밋하지 않음). 글꼴은 `src/font.css`(잘라 둔 것). 새 한글 글자를 넣었으면 글꼴을 다시 잘라 `src/font.css`를 바꿈(`tools/font_subset.py.txt`, npm @fontsource 필요)
+3. 시험: `src/tools/README.txt`의 시험 명령(checkmaps, balprof, touchflow 등)
+4. `timeflex/out/index.html`을 `timeflex/index.html`로 덮어쓰고 커밋, 푸시. 1~2분 뒤 같은 링크에 반영됨
+5. 커밋 메시지에 버전과 바뀐 점을 적음(예: `타임플렉스 v1.5: 처치 효과 정리`)
+6. 안드로이드 APK가 필요할 때만 Claude 작업 공간에서 서명해 따로 보냄(키는 이 저장소에 없음)
 
 ## 지켜야 할 것
 
