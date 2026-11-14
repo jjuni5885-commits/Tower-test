@@ -137,7 +137,9 @@ window.__td = {
   bot: function (sk) { BOT = makeBot(G, { skill: sk == null ? 1 : sk }); }, speed: function (s) { UI.speed = s; },
   st: function () { return { endT: UI.endT, err: LOOP.errShown, paused: UI.paused, modal: UI.modalOpen, kind: UI.modalKind, hs: RD.hitStop, scr: UI.scr, speed: UI.speed, story: !$('story').classList.contains('hide'), lowFx: RD.lowFx, dprCap: RD.dprCap, coins: COINS.length, pend: RD.coinPend, hGold: $('hGold').textContent }; },
   pc: function () { var o = { n: PARTS.length }; PARTS.forEach(function (p) { o[p.k] = (o[p.k] || 0) + 1; }); return o; },
-  spawn: function (k, p, d) { var e = spawnEnemy(G, k, p || 0, d || 0); return !!e; },   // 시험: 적 하나를 길 위 d 거리에
+  spawn: function (k, p, d) { var e = spawnEnemy(G, k, p || 0, d || 0); return !!e; },
+  x3Sheet: function (keys, S) { return typeof x3Sheet === 'function' ? x3Sheet(keys, S) : ''; },
+  sprSheet: function (keys, S) { return typeof tfSprSheet === 'function' ? tfSprSheet(keys, S) : ''; },   // 시험: 적 하나를 길 위 d 거리에
   build: function (k, c, r) { return buildTower(G, k, c, r); }, upgrade: function (t, br) { return upgradeTower(G, t, br); },
   // 시험용 빨리 돌리기: 능력 카드를 기다리면(g.pickWait) 봇이 첫 카드를 고름 (화면 쪽 사건 처리 없이 돌 때 멈추지 않게)
   step: function (n) { for (var i = 0; i < n; i++) { if (G.pickWait && BOT) tdAutoPick(G); if (BOT) botTick(BOT, DT); stepGame(G, DT); } },

@@ -1177,6 +1177,7 @@ function enMake(H, ol, fn) {
 function enemyFrames(k, S) {
   var key = k + ':' + Math.round(S); if (EN_SPR[key]) return EN_SPR[key];
   var E = ENEMIES[k];
+  if (typeof x3Frames === 'function') { var v3 = x3Frames(k, S, E); if (v3) return (EN_SPR[key] = v3); }   // v1.3 코드 그림 세 방향(tf_art_v3.js)
   if (typeof tfSprFrames === 'function') { var sp = tfSprFrames(k, S, E); if (sp) return (EN_SPR[key] = sp); }   // 타임플렉스 원화(tf_spr.js)
   var vis = enVis(E), H = vis * S, D = EN_DRAW[k] || EN_DRAW[E.art] || EN_DRAW.goblin, n = D.n || NFR, out = { fr: [], wh: [], n: n, h: H };
   enLW = Math.max(1, S * 0.02); EN_RIMW = 0; EN_ONE = null;   // 타임플렉스 v1.1: 흰 스티커 테두리 없앰(종이 인형처럼 보임). 어두운 외곽선만
