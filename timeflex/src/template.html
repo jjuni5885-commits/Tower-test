@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><script>(function(){var u=navigator.userAgent,h=location.href;if(/KAKAOTALK/i.test(u)){location.href="kakaotalk://web/openExternal?url="+encodeURIComponent(h);}else if(/Android/i.test(u)&&/(Instagram|FBAN|FBAV|NAVER|Line\/|DaumApps|; wv\))/i.test(u)){location.href="intent://"+h.replace(/^https?:\/\//,"")+"#Intent;scheme=https;package=com.android.chrome;end";}})();</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#141a3a">
+<meta property="og:title" content="타임플렉스: 시간 전쟁">
+<meta property="og:description" content="원시 시대부터 우주 전쟁까지 15개 시대, 105개 전장. 시대의 탑을 모아 시간의 문을 지켜 내는 전략 디펜스">
+<title>타임플렉스: 시간 전쟁</title>
+<style>/*FONTS*/</style>
+<style>/*STYLE*/</style>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><script>if("serviceWorker" in navigator)addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});</script></head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="hud" class="hide">
+    <div class="hl">
+      <div class="stat gold"><img data-ic="coin" alt=""><b id="hGold">0</b></div>
+      <div class="stat life"><img data-ic="life" alt=""><b id="hLife">20</b></div>
+      <div class="stat wave"><img data-ic="skull" alt=""><b id="hWave">0</b></div>
+    </div>
+    <div class="hr">
+      <button class="ib" id="bSpeed"><img data-ic="speed" alt=""><span id="spdTxt">1배</span></button>
+      <button class="ib" id="bPause"><img data-ic="pause" alt=""></button>
+    </div>
+  </div>
+  <div id="bossbar" class="hide"><div class="bn" id="bossName"></div><div class="bb"><i id="bossFill"></i><i id="bossShield"></i></div></div>
+  <div id="tut" class="hide"></div>
+  <div id="bottom" class="hide">
+    <div class="skills">
+      <button class="sk" id="sk_rain"><span class="face"><img data-ic="rain" alt=""><i class="cd"></i><b></b></span><em>화살비</em></button>
+      <button class="sk" id="sk_wall"><span class="face"><img data-ic="wall" alt=""><i class="cd"></i><b></b></span><em>방책</em></button>
+      <button class="sk" id="sk_last"><span class="face"><img data-ic="last" alt=""><i class="cd"></i><b></b></span><em>최후의 화살</em></button>
+    </div>
+    <button id="bWave"><svg class="ring" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" class="rbg"></circle><circle cx="24" cy="24" r="22" id="waveRing" class="rfg"></circle></svg><span class="wn" id="waveNum"></span><div class="wl" id="waveLbl"></div><div class="wi" id="waveIcons"></div></button>
+  </div>
+  <div id="tray" class="hide"></div>
+  <div id="banner"></div>
+  <div id="toast"></div>
+
+  <section id="sTitle" class="screen">
+    <canvas id="titleCv"></canvas>
+    <div class="logo">
+      <div class="l0">시간 수비 전략 디펜스</div>
+      <div class="l1">타임플렉스</div>
+      <div class="l3">시간 전쟁</div>
+      <div class="l2">TIME FLEX</div>
+    </div>
+    <div class="tgem stat gem"><img data-uic="gem" alt=""><b class="gemN">0</b></div>
+    <div class="tap">화면을 눌러 시작</div>
+    <div class="ver" id="ver"></div>
+  </section>
+
+  <section id="sMap" class="screen hide">
+    <div class="mapWrap" id="mapWrap"><canvas id="mapCv"></canvas><div id="nodes"></div></div>
+    <div id="chSel" class="hide"></div>
+    <div class="mtop"><div class="mtl"><button class="mback hide" id="mBack">챕터</button><div class="mtt" id="mTitle">타임플렉스</div></div><div class="mtr"><button class="stat adm hide" id="mAdm">관리자</button><button class="stat gem" id="mGem"><img data-uic="gem" alt=""><b class="gemN">0</b></button><div class="stat"><img data-ic="star" alt=""><b id="starTot">0</b></div></div></div>
+    <div class="mbot">
+      <button class="btn tile summon" id="bGacha"><img data-gci="summon" alt=""><span>소환</span><i class="dot hide" id="gachaDot"></i></button>
+      <button class="btn tile" id="bQuest"><img data-uic="quest" alt=""><span>오늘 임무</span><i class="dot hide" id="questDot"></i></button>
+      <button class="btn tile shop" id="bShop"><img data-uic="shop" alt=""><span>상점</span></button>
+      <button class="btn tile" id="bRes"><img data-ic="hammer" alt=""><span>공방</span><i class="dot hide" id="resDot"></i></button>
+      <button class="btn tile" id="bCodex"><img data-ic="book" alt=""><span>도감</span><i class="dot hide" id="codexDot"></i></button>
+      <button class="btn tile" id="bSet"><img data-ic="gear" alt=""><span>설정</span></button>
+    </div>
+  </section>
+
+  <section id="sModal" class="screen hide"><div class="modal" id="modal"></div></section>
+  <section id="adLayer" class="hide"></section>
+  <section id="story" class="hide"><canvas id="stBg"></canvas><div class="sbg"></div><div class="sbox"><div class="who" id="stWho"></div><div class="txt" id="stTxt"></div><div class="snext">눌러서 계속</div></div><button id="stSkip">건너뛰기</button></section>
+  <div id="loading" class="hide"><div class="ld">전장을 준비하는 중</div></div>
+</div>
+<script>/*SCRIPT*/</script>
+</body>
+</html>
