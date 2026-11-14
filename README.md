@@ -16,6 +16,11 @@
 | `towerflex/index.html` | 타워플렉스: 차원전쟁 빌드본(한 파일) |
 | `towerflex/src/` | 타워플렉스 원본 소스. 난이도 기록은 `src/docs/BALANCE.md` |
 
+## 앱처럼 열기
+
+- 각 게임 폴더의 `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`가 크롬 '홈 화면에 추가'(전체 화면 앱)를 담당합니다. `src/template.html` 머리에 연결 줄이 들어 있어 다시 빌드해도 유지됩니다.
+- 모든 페이지 맨 앞의 짧은 스크립트가 카카오톡 등 앱 안 브라우저에서 열리면 크롬(외부 브라우저)으로 다시 엽니다.
+
 ## 고치는 방법 (Claude에게 맡길 때)
 
 1. 고칠 내용은 `src/` 안의 파일을 고칩니다. 빌드본(`index.html`)을 직접 고치지 않습니다.
