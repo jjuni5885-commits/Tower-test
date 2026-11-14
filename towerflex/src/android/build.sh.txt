@@ -1,0 +1,19 @@
+#!/bin/bash
+# 타워플렉스 APK 만들기. 사용: VC=7 VN=2.1 KS_PASS=비밀번호 ./build.sh ../out/index.html
+# 도구: apt-get install aapt apksigner zipalign dalvik-exchange android-sdk-platform-23 (+ JDK)
+set -e
+cd "$(dirname "$0")"
+HTML=${1:-../out/index.html}; VC=${VC:-7}; VN=${VN:-2.1}
+AJ=/usr/lib/android-sdk/platforms/android-23/android.jar
+KS=${KS:-keystore/towerflex.jks}; KA=${KA:-towerflex}
+rm -rf build && mkdir -p build/classes build/res build/assets
+cp "$HTML" build/assets/index.html
+javac -source 1.8 -target 1.8 -encoding UTF-8 -bootclasspath $AJ -d build/classes $(find src -name '*.java') 2>&1 | grep -v "warning\|^Note\|^1 warning" || true
+dalvik-exchange --dex --output=build/classes.dex build/classes
+aapt2 compile --dir res -o build/res.zip
+aapt2 link -o build/base.apk -I $AJ --manifest AndroidManifest.xml -A build/assets --min-sdk-version 24 --target-sdk-version 34 --version-code $VC --version-name $VN --replace-version build/res.zip
+(cd build && zip -q -j base.apk classes.dex)
+zipalign -f -p 4 build/base.apk build/aligned.apk
+apksigner sign --ks $KS --ks-key-alias $KA --ks-pass env:KS_PASS --key-pass env:KS_PASS --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out build/towerflex.apk build/aligned.apk
+apksigner verify --verbose build/towerflex.apk | head -5
+ls -la build/towerflex.apk
