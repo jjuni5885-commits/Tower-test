@@ -1,0 +1,47 @@
+# ENG2 브라우저 확인: python3 tools/tw2flow.py [가로x세로]  → shots/tw2_<크기>_<장면>.png
+# 실제 화면에서 새 탑 24종 + 관리자 2종을 6단계까지 올려 싸우고, 합체 한 번, 콘솔 오류 0인지 본다 (그리기는 그림, 그리기 갈래 몫. 여기서는 엔진이 화면과 함께 도는지만)
+import sys, asyncio, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+JS_SETUP = """(function(){
+  var g = __td.G(); g.gold = 1e7; g.admin = true; g.fuse = true; g.maxLv = 6; g.towersOk = null;
+  var ks = %s, n = 0, built = {}, cells = [];
+  for (var r = 2; r < g.rows - 1; r++) for (var c = 0; c < g.cols; c++) cells.push([c, r]);
+  ks.forEach(function (k, i) { for (var j = 0; j < cells.length; j++) { var t = __td.build(k, cells[j][0], cells[j][1]); if (t) { var q = 0; while (__td.upgrade(t, i %% 2) && q++ < 9) { } built[k] = t.lvl; cells.splice(j, 1); return; } } built[k] = 0; });
+  return built; })()"""
+async def main():
+    sizes = [a for a in sys.argv[1:] if 'x' in a] or ['360x640']
+    os.makedirs(OUT, exist_ok=True); bad = 0
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        for sz in sizes:
+            W, H = map(int, sz.split('x'))
+            ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+            pg = await ctx.new_page(); errs = []
+            pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+            pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+            await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+            sea = await pg.evaluate("(function(){var s=0; __td.MAPS.forEach(function(m,i){ if(!s&&m.sea&&m.sea.length) s=i; }); return s;})()")
+            air = await pg.evaluate("(function(){var s=0; __td.MAPS.forEach(function(m,i){ if(!s&&m.air&&m.air.length) s=i; }); return s;})()")
+            groups = [(sea, "['warship','turtle','flak','sam','gatling','sniper','rocket','laser','tesla','airbase','singijeon','jangseung','barracks','shrine']", 'sea'),
+                      (air, "['omega','dragon','archer','ballista','cannon','catapult','arcane','frost','flame','bell','alchemy','mint','flak','sam','airbase','gatling']", 'air')]
+            for mi, ks, tag in groups:
+                await pg.evaluate("__td.SAVE().tut.done=1; __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1200)
+                built = await pg.evaluate(JS_SETUP % ks)
+                await pg.evaluate("(function(){ var g=__td.G(); __td.bot(1); for (var i=0;i<60*20 && !g.over;i++) __td.step(1); })()")
+                for k in range(4):
+                    await pg.wait_for_timeout(1500)
+                    await pg.evaluate("(function(){ var g=__td.G(); ['bat','orc','knight'].forEach(function(e){ __td.fd.spawn(e,0,2); }); for (var i=0;i<60*3 && !g.over;i++) __td.step(1); })()")
+                await pg.evaluate("document.getElementById('sModal').classList.add('hide')"); await pg.wait_for_timeout(600)
+                info = await pg.evaluate("(function(){ var g=__td.G(), st=__td.st(); return { id: g.M.id, wave: g.wave, towers: g.towers.length, units: g.units.length, proj: g.proj.length, over: g.over, err: st.err }; })()")
+                path = OUT + 'tw2_%s_%s.png' % (sz, tag); await pg.screenshot(path=path)
+                zero = [k for k in built if not built[k]]
+                print(sz, tag, info, '못 지은 탑:', zero, path)
+                if info['err'] or zero: bad += 1
+            print(sz, '콘솔 오류:', errs[:6])
+            if errs: bad += 1
+            await ctx.close()
+        await b.close()
+    print('ALL OK' if not bad else 'FAILS %d' % bad); sys.exit(1 if bad else 0)
+asyncio.run(main())

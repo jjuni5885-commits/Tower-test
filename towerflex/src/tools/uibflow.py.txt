@@ -1,0 +1,292 @@
+# [UIB] 전투 화면 시험: python3 tools/uibflow.py [가로x세로] [--shots]
+# 손가락 탭으로만: 칸 크기와 누르기 정확도, 건설 쟁반 8종(카드 두 번, 건설 단추, 능력 한 줄이 건설을 일으키지 않는지), 물 칸과 수상 탑,
+# 강화, 갈래 변신, 궁극, 잠금 이유, 합체, 도전 규칙 칩과 건설 막힘 알림, 웨이브 미리보기(영역, 넘침), 일시 정지 관리자 단추, 결과 창 확정 보상과 해금 안내
+# v2.0 QA: 가짜(FAKE)는 걷어냄. 실제 엔진(6단계, fuseOptions/fuseTowers, admBattle, 탑 그림)을 그대로 쓴다
+import sys, asyncio, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+RES = []
+def ok(name, cond, info=''):
+    RES.append((name, bool(cond)))
+    print(('통과 ' if cond else '실패 ') + name + ('  ' + str(info) if info != '' else ''))
+REAL = r"""(function(){
+  // v2.0 QA: 가짜(FAKE)를 걷어내고 실제 엔진을 점검만 한다. 그림 없는 탑, 6단계 없는 탑, 합체 함수
+  var T = __uib.TOWERS, h = __uib.has(), out = { noArt: [], short: [], fuse: h.fuse, adm: h.adm };
+  Object.keys(T).forEach(function (k) {
+    if (!__uib.ext[k] && !__uib.hasArt(k)) out.noArt.push(k);
+    if (!T[k].fusion && !T[k].admin && T[k].br && T[k].br.some(function (B) { return !B.tiers || B.tiers.length < 3; })) out.short.push(k);
+  });
+  return out;
+})()"""
+async def main():
+    W, H = 360, 640
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    if args and 'x' in args[0]: W, H = map(int, args[0].split('x'))
+    tag = '%dx%d' % (W, H)
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html')
+        await pg.wait_for_timeout(1300)
+        async def ev(js, arg=None): return await pg.evaluate(js, arg) if arg is not None else await pg.evaluate(js)
+        async def shot(n, wait=350):
+            await pg.wait_for_timeout(wait); await pg.screenshot(path=OUT + 'uib_%s_%s.png' % (tag, n))
+        async def tap_xy(x, y, wait=350):
+            await pg.touchscreen.tap(x, y); await pg.wait_for_timeout(wait)
+        async def tap_el(sel, wait=380, idx=0):
+            r = await ev("""(function(a){var e=document.querySelectorAll(a[0])[a[1]]; if(!e) return null; var b=e.getBoundingClientRect(); var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y);
+              return {x:x, y:y, hit: !!t && (e===t || e.contains(t)), top: t ? (t.id || t.className || t.tagName) : null};})""", [sel, idx])
+            if not r: return {'missing': sel}
+            await tap_xy(r['x'], r['y'], wait)
+            return r
+        async def cell_xy(c, r, fx=0.5, fy=0.5):
+            return await ev("(function(a){var v=__td.view(); return [(v.ox + (a[0] + a[2]) * v.S) / v.dpr, (v.oy + (a[1] + a[3]) * v.S) / v.dpr];})", [c, r, fx, fy])
+        async def tray(): return await ev("(function(){var t=__uib.UI.tray; return t ? {kind:t.kind, c:t.c, r:t.r, k:t.t?t.t.k:null, lvl:t.t?t.t.lvl:0, br:t.t?t.t.br:0, pick:__uib.UI.pick} : null;})()")
+        async def close_tray():
+            if await ev("!!__uib.UI.tray"): await tap_el('#tray [data-a="close"]', 300)
+        async def pick_cards():
+            for i in range(10):   # 시작 능력 카드 창은 판 시작 뒤 조금 늦게 뜰 수 있음
+                if await ev("__td.st().kind==='pick' || __td.st().kind==='card'"): break
+                await pg.wait_for_timeout(250)
+            for i in range(4):
+                if await ev("__td.st().kind==='pick' && !!document.querySelector('.pkc')"): await tap_el('.pkc', 1100)
+                elif await ev("__td.st().kind==='card' && !!document.getElementById('bOk')"): await tap_el('#bOk', 500)
+                else: break
+        async def start(mi, lineup=None, gold=6000):
+            await ev("__td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1300)
+            await pick_cards()
+            if lineup: await ev("(function(a){var g=__td.G(); g.towersOk=a[0]; g.gold=a[1]; g.maxLv=6; g.fuse=true;})", [lineup, gold])
+        made = await ev(REAL)
+        ok('실제 엔진: 모든 탑 그림, 6단계, 합체와 관리자 함수', not made['noArt'] and not made['short'] and made['fuse'] and made['adm'], made)
+        await ev("var s=__td.SAVE(); s.tut.done=1; __td.unlockAll(); __td.ownAll(); delete s.rec.c1s03; if (s.tkRew) delete s.tkRew.c1s03r;")
+        LINE = ['archer', 'catapult', 'flak', 'frost', 'ballista', 'gatling', 'warship', 'turtle']
+
+        # ---------- 1. 화면 높이와 칸 크기 ----------
+        await start(5, LINE)   # c1s06: 땅과 물 칸(뱃길)이 다 있는 판
+        L = await ev("""(function(){var v=__td.view(), g=__td.G(), s=v.S/v.dpr, hud=document.getElementById('hud').getBoundingClientRect(), bot=document.getElementById('bottom').getBoundingClientRect();
+          return {cell:+s.toFixed(2), left:+(v.ox/v.dpr).toFixed(1), top:+(v.oy/v.dpr).toFixed(1), bottom:+((v.oy+v.S*g.rows)/v.dpr).toFixed(1), hudB:hud.bottom, botT:bot.top, compact:document.body.classList.contains('uibC'), W:innerWidth, H:innerHeight, cols:g.cols, rows:g.rows};})()""")
+        print('   배치:', L)
+        want = min(W / L['cols'], 31.0) if H <= 700 else W / L['cols'] - 0.01
+        ok('칸 크기 %.1fpx (목표 %.1f 이상)' % (L['cell'], want), L['cell'] >= want - 0.01, '좌우 여백 %.1fpx' % L['left'])
+        ok('판이 위 막대와 아래 막대 사이에 들어감', L['top'] >= L['hudB'] - 0.6 and L['bottom'] <= L['botT'] + 0.6, [L['hudB'], L['top'], L['bottom'], L['botT']])
+        hb = await ev("""(function(){var o=[]; document.querySelectorAll('#hud .stat, #hud .ib, #hud .uRule:not(.hide), #bottom .sk, #bWave').forEach(function(e){var r=e.getBoundingClientRect(), t=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
+          if (r.left < -0.5 || r.right > innerWidth + 0.5 || r.top < -0.5 || r.bottom > innerHeight + 0.5 || !(t && (t===e || e.contains(t) || t.contains(e)))) o.push((e.id||e.className)+' '+[r.left,r.right,r.top,r.bottom].map(Math.round).join('/'));});
+          var a=[].slice.call(document.querySelectorAll('#hud .hl > *, #hud .hr > *')).filter(function(e){return getComputedStyle(e).display!=='none';}).map(function(e){return e.getBoundingClientRect();}).sort(function(p,q){return p.left-q.left;});
+          for (var i=1;i<a.length;i++) if (a[i].left < a[i-1].right - 0.5) o.push('위 막대 겹침 '+i); return o;})()""")
+        ok('위 막대, 아래 막대 단추가 화면 안이고 서로 안 겹침', not hb, hb)
+        await shot('battle')
+
+        # ---------- 2. 누르기 정확도 ----------
+        cells = await ev("""(function(){var g=__td.G(), land=[], water=[], path=[]; for (var r=0;r<g.rows;r++) for (var c=0;c<g.cols;c++){ var i=r*g.cols+c, o=g.obsAt[i];
+            if (o>=0 && g.obs[o].alive) continue; if (g.kind[i]==='g') land.push([c,r]); else if (g.kind[i]==='water' && !(g.seaCell&&g.seaCell[i])) water.push([c,r]); else if (g.kind[i]==='p') path.push([c,r]); }
+          return {land:land, water:water, path:path};})()""")
+        pick = [cells['land'][0], cells['land'][len(cells['land']) // 3], cells['land'][len(cells['land']) // 2], cells['land'][-1]] + ([cells['water'][0], cells['water'][-1]] if cells['water'] else [])   # 물 칸 없는 판이면 땅만
+        await pg.wait_for_timeout(300); await ev("var t=document.getElementById('uRuleTip'); if (t && !t.classList.contains('hide')) t.click(); 1")   # 판 시작 규칙 설명(위쪽 칸을 덮음)을 먼저 닫음
+        await pg.wait_for_timeout(300)
+        bad = []
+        for (c, r) in pick:
+            for (fx, fy) in [(0.5, 0.5), (0.12, 0.14), (0.88, 0.86)]:
+                x, y = await cell_xy(c, r, fx, fy)
+                await ev("__uib.close()"); await tap_xy(x, y, 220)
+                t = await tray()
+                if not t or t['kind'] != 'build' or t['c'] != c or t['r'] != r: bad.append([c, r, fx, fy, t])
+        ok('빈 칸 탭 정확도 (칸 6곳 x 가운데, 모서리 2곳)', not bad, bad[:3])
+        # 길 한가운데는 건설 창이 안 뜸, 길 가장자리(옆 빈 칸에서 0.15칸)는 옆 칸으로 붙음
+        pc = await ev("""(function(){var g=__td.G(), GC=g.cols; function site(c,r){ if(c<0||r<0||c>=g.cols||r>=g.rows) return false; var i=r*GC+c, o=g.obsAt[i]; return g.kind[i]==='g' && !(o>=0&&g.obs[o].alive) && g.towerAt[i]<0; }
+          for (var r=2;r<g.rows-2;r++) for (var c=1;c<g.cols-1;c++) if (g.kind[r*GC+c]==='p' && site(c-1,r) && g.kind[r*GC+c+1]==='p') return [c,r]; return null;})()""")
+        await ev("__uib.close()")
+        x, y = await cell_xy(pc[0], pc[1], 0.9, 0.5); await tap_xy(x, y, 250)
+        ok('길 안쪽 탭은 건설 창이 안 뜸', await tray() is None, pc)
+        x, y = await cell_xy(pc[0], pc[1], 0.15, 0.5); await tap_xy(x, y, 250)
+        t = await tray()
+        ok('길 가장자리 탭은 옆 빈 칸으로 붙음', bool(t) and t['kind'] == 'build' and t['c'] == pc[0] - 1 and t['r'] == pc[1], t)
+        await close_tray()
+
+        # ---------- 3. 건설 쟁반 8종 ----------
+        lc = cells['land'][len(cells['land']) // 2]
+        x, y = await cell_xy(lc[0], lc[1]); await tap_xy(x, y, 400)
+        info = await ev("""(function(){var tr=document.getElementById('tray').getBoundingClientRect(), cs=[].slice.call(document.querySelectorAll('#tray .tc')), rows={}, out=[];
+          cs.forEach(function(e){var r=e.getBoundingClientRect(); rows[Math.round(r.top)]=1; if (r.left<tr.left-0.5||r.right>tr.right+0.5||r.top<tr.top||r.bottom>tr.bottom||r.width<60) out.push(e.getAttribute('data-k'));
+            if (!e.querySelector('.co') || !e.querySelector('.uDoms')) out.push('값이나 영역 없음 '+e.getAttribute('data-k')); if (e.scrollWidth>e.clientWidth+1) out.push('넘침 '+e.getAttribute('data-k')); });
+          return {n:cs.length, rows:Object.keys(rows).length, out:out, top:tr.top, bottom:tr.bottom, h:Math.round(tr.height), no:cs.filter(function(e){return e.classList.contains('no');}).map(function(e){return e.getAttribute('data-k');}), wat:cs.filter(function(e){return !!e.querySelector('.uWat');}).map(function(e){return e.getAttribute('data-k');}),
+            flak:[].slice.call(document.querySelectorAll('#tray .tc[data-k="flak"] .uDm:not(.off)')).map(function(e){return e.className.replace(/uDm /,'');}).join(''), cat:[].slice.call(document.querySelectorAll('#tray .tc[data-k="catapult"] .uDm:not(.off)')).map(function(e){return e.className.replace(/uDm /,'');}).join('')};})()""")
+        ok('건설 쟁반: 8종이 4 x 2로 한눈에', info['n'] == 8 and info['rows'] == 2 and not info['out'] and info['top'] >= 0 and info['bottom'] <= H, info)
+        ok('땅 칸: 수상 탑만 흐리게, 수상 표시 2종', sorted(info['no']) == ['turtle', 'warship'] and sorted(info['wat']) == ['turtle', 'warship'], [info['no'], info['wat']])
+        ok('맞히는 영역 딱지 (대공포 하늘만, 투석기 땅과 바다)', info['flak'] == 'a' and info['cat'] == 'gs', [info['flak'], info['cat']])
+        cy = await ev("(function(a){var v=__td.view(), y0=(v.oy+a[1]*v.S)/v.dpr, y1=(v.oy+(a[1]+1)*v.S)/v.dpr, t=document.getElementById('tray').getBoundingClientRect(); return [y0,y1,t.top,t.bottom];})", lc)
+        ok('건설 쟁반이 고른 칸을 가리지 않음', cy[1] <= cy[2] + 1 or cy[0] >= cy[3] - 1, [round(v) for v in cy])
+        await shot('build_land')
+        # 수상 탑 카드를 땅 칸에서 누르면 알림만 뜨고 안 지어짐
+        r1 = await tap_el('.tc[data-k="warship"]', 350); r2 = await tap_el('.tc[data-k="warship"]', 350)
+        toast = await ev("document.getElementById('toast').textContent")
+        ok('땅 칸에서 수상 탑은 알림만', await ev("__td.G().towers.length") == 0 and '물' in toast, toast)
+        # 카드 두 번 → 건설
+        r1 = await tap_el('.tc[data-k="archer"]', 350)
+        sel = await ev("(function(){var b=document.querySelector('#tray .tgo'); return {sel:!!document.querySelector('#tray .tc.sel[data-k=\"archer\"]'), go:!!b, a:b?b.getAttribute('data-a'):null, names:[].slice.call(document.querySelectorAll('#tray [data-a]')).map(function(e){return e.getAttribute('data-a');})};})()")
+        ok('카드 한 번: 설명과 건설 단추', sel['sel'] and sel['go'] and sel['a'] == 'tbuild', sel)
+        await shot('build_pick')
+        r2 = await tap_el('.tc[data-k="archer"]', 450)
+        ok('궁수탑 카드 두 번 → 건설', await ev("__td.G().towers.length") == 1 and await tray() is None, [r1, r2])
+        # 카드 한 번 + 건설 단추. 그 전에 능력 한 줄(.bmini, data-a="build")이 건설을 일으키지 않는지
+        lc2 = [lc[0], lc[1]]
+        nb = cells['land'][2]   # 위쪽 칸: 쟁반이 아래에 넉넉히 놓여 능력 한 줄이 접히지 않음(가운데 줄에서는 줄인 쟁반이 능력 한 줄을 접는다)
+        await ev("__td.G().attr = __td.G().attr || {}; __td.G().attr.catapult='fire';")
+        x2, y2 = await cell_xy(nb[0], nb[1]); await tap_xy(x2, y2, 400)
+        await tap_el('.tc[data-k="catapult"]', 350)
+        has_mini = await ev("!!document.querySelector('#tray .bmini')")
+        if has_mini:
+            rm = await tap_el('#tray .bmini', 500)
+            print('   bmini', rm, await ev("[__td.G().towers.length, __td.st().kind, __td.st().modal, !!__uib.UI.tray]"))
+            ok('능력 한 줄 탭은 건설이 아니라 빌드 보기', await ev("__td.G().towers.length") == 1 and await ev("__td.st().kind") == 'build', await ev("__td.st().kind"))
+            await tap_el('#bvClose', 400)
+            await tap_xy(x2, y2, 400); await tap_el('.tc[data-k="catapult"]', 350)
+        else: ok('능력 한 줄(.bmini) 표시', False, '없음')
+        dup = await ev("(function(){var n={}, d=[]; document.querySelectorAll('#tray [data-a]').forEach(function(e){var a=e.getAttribute('data-a'); if (a==='tpick') return; n[a]=(n[a]||0)+1;}); for (var k in n) if (n[k]>1 && k!=='build') d.push(k); var go=document.querySelector('#tray .tgo'); if (go && go.getAttribute('data-a')==='build') d.push('건설 단추가 build'); return d;})()")
+        ok('쟁반 단추 동작 이름이 서로 다름', not dup, dup)
+        r = await tap_el('#tray .tgo', 450)
+        ok('투석기: 카드 한 번 + 건설 단추', await ev("__td.G().towers.length") == 2 and await ev("__td.G().towers[1].k") == 'catapult', r)
+        # 물 칸: 수상 탑
+        wc = cells['water'][len(cells['water']) // 2]
+        xw, yw = await cell_xy(wc[0], wc[1]); await tap_xy(xw, yw, 400)
+        wi = await ev("(function(){return {title:document.querySelector('#tray .th > b').textContent, no:[].slice.call(document.querySelectorAll('#tray .tc.no')).length, first:document.querySelector('#tray .tc').getAttribute('data-k')};})()")
+        ok('물 칸: 수상 탑만 밝고 앞에', '수상' in wi['title'] and wi['no'] == 6 and wi['first'] in ('warship', 'turtle'), wi)
+        await shot('build_water')
+        await tap_el('.tc[data-k="warship"]', 350); await tap_el('.tc[data-k="warship"]', 450)
+        ok('전함 카드 두 번 → 물 위에 건설', await ev("(function(){var g=__td.G(), t=g.towers[2]; return !!t && t.k==='warship' && g.kind[t.r*g.cols+t.c]==='water';})()"))
+
+        # ---------- 4. 탑 쟁반: 강화, 갈래 변신, 궁극, 잠금 ----------
+        await tap_xy(x, y, 400)
+        t = await tray()
+        ok('탑 탭 → 탑 쟁반', bool(t) and t['kind'] == 'tower' and t['k'] == 'archer', t)
+        await tap_el('#tray .uc', 350); await tap_el('#tray .uc', 400)
+        await tap_el('#tray .uc', 350); await tap_el('#tray .uc', 400)
+        ok('강화 카드 두 번씩 → 3단계', (await tray())['lvl'] == 3)
+        br = await ev("""(function(){var cs=[].slice.call(document.querySelectorAll('#tray .uc.uBr')), tr=document.getElementById('tray').getBoundingClientRect(); return {n:cs.length, names:cs.map(function(e){return e.querySelector('b').textContent;}), desc:cs.every(function(e){return e.querySelector('span').textContent.length>4;}), img:cs.every(function(e){return !!e.querySelector('img').src;}), ult:cs.map(function(e){var u=e.querySelector('.uUltN'); return u?u.textContent:'';}),
+          side:cs.length===2 && Math.abs(cs[0].getBoundingClientRect().top-cs[1].getBoundingClientRect().top)<2, fit:cs.every(function(e){var r=e.getBoundingClientRect(); return r.left>=tr.left&&r.right<=tr.right&&r.bottom<=tr.bottom;}), h:Math.round(tr.height)};})()""")
+        ok('갈래 선택: A와 B가 나란히(그림, 이름, 설명, 궁극 이름)', br['n'] == 2 and br['desc'] and br['img'] and br['side'] and br['fit'] and all('궁극' in u for u in br['ult']), br)
+        ty = await ev("(function(){var t=__uib.UI.tray.t, v=__td.view(), y0=(v.oy+t.r*v.S)/v.dpr, y1=(v.oy+(t.r+1)*v.S)/v.dpr, r=document.getElementById('tray').getBoundingClientRect(); return [y0,y1,r.top,r.bottom];})()")
+        ok('탑 쟁반이 탑을 가리지 않음', ty[1] <= ty[2] + 1 or ty[0] >= ty[3] - 1, [round(v) for v in ty])
+        await shot('branch')
+        await tap_el('#tray .uc.uBr[data-br="1"]', 350)
+        s1 = await ev("(function(){var e=document.querySelector('#tray .uc.uBr.sel'); return {br:e?e.getAttribute('data-br'):null, again:e&&e.querySelector('strong')?e.querySelector('strong').textContent:'', lvl:__uib.UI.tray.t.lvl};})()")
+        ok('갈래 B 한 번: 고르기만(아직 3단계)', s1['br'] == '1' and '변신' in s1['again'] and s1['lvl'] == 3, s1)
+        await shot('branch_sel')
+        await tap_el('#tray .uc.uBr[data-br="0"]', 350); await tap_el('#tray .uc.uBr[data-br="0"]', 450)
+        t = await tray()
+        ok('갈래 A 두 번 → 4단계 변신', t['lvl'] == 4 and t['br'] == 0 and '매의 눈' in await ev("document.querySelector('#tray .tt b').textContent"), t)
+        await tap_el('#tray .uc', 350); await tap_el('#tray .uc', 450)
+        u = await ev("(function(){var e=document.querySelector('#tray .uc.uUltC'); return {lvl:__uib.UI.tray.t.lvl, ult:e?e.querySelector('b').textContent:'', img:!!(e&&e.querySelector('img'))};})()")
+        ok('5단계: 궁극 변신 카드(이름, 미리보기)', u['lvl'] == 5 and '궁극 변신' in u['ult'] and '천리안 신궁' in u['ult'] and u['img'], u)
+        await shot('ult')
+        await tap_el('#tray .uc.uUltC', 350); await tap_el('#tray .uc.uUltC', 450)
+        t = await tray()
+        ok('궁극 카드 두 번 → 6단계', t['lvl'] == 6 and '천리안 신궁' in await ev("document.querySelector('#tray .tt b').textContent") and await ev("!!document.querySelector('#tray .maxed')"), t)
+        # 잠금: 갈래(maxLv 3), 궁극(maxLv 5)
+        await ev("(function(){var g=__td.G(), t=g.towers[1]; g.maxLv=3; t.lvl=3; __uib.re(); __uib.tower(t);})()"); await pg.wait_for_timeout(250)
+        lk = await ev("(function(){var e=document.querySelector('#tray .uLock'); return e ? {txt:e.querySelector('p').textContent, n:e.querySelectorAll('.uLk1').length, btn:document.querySelectorAll('#tray .uc').length} : null;})()")
+        ok('잠금: 갈래 변신은 어느 판 뒤에 열리는지', bool(lk) and '갈래 변신' in lk['txt'] and '열립니다' in lk['txt'] and lk['n'] == 2 and lk['btn'] == 0, lk)
+        await shot('lock_branch')
+        await ev("(function(){var g=__td.G(), t=g.towers[1]; g.maxLv=5; t.lvl=5; t.br=1; __uib.re(); __uib.tower(t);})()"); await pg.wait_for_timeout(250)
+        lk = await ev("(function(){var e=document.querySelector('#tray .uLock'); return e ? {txt:e.querySelector('p').textContent, nm:e.querySelector('.uLk1 b').textContent} : null;})()")
+        ok('잠금: 궁극 변신 이유와 이름', bool(lk) and '궁극 변신' in lk['txt'] and lk['nm'] == '산사태 투척기', lk)
+        await shot('lock_ult')
+        await ev("__td.G().maxLv=6; __uib.close()")
+
+        # ---------- 5. 합체 ----------
+        fz = await ev("""(function(a){var g=__td.G(), GC=g.cols, t=g.towers[0]; var ds=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+          for (var i=0;i<ds.length;i++){ var c=t.c+ds[i][0], r=t.r+ds[i][1], k=r*GC+c; if (c>=0&&r>=0&&c<GC&&r<g.rows&&g.kind[k]==='g'&&g.towerAt[k]<0&&!(g.obsAt[k]>=0&&g.obs[g.obsAt[k]].alive)) { g.gold=9000; var b=__td.build('ballista',c,r); b.lvl=5; b.br=1; t.lvl=5; t.br=0; __uib.re(); return [t.c,t.r,c,r,g.towers.length]; } } return null;})""", 0)
+        x, y = await cell_xy(fz[0], fz[1]); await tap_xy(x, y, 400)
+        f0 = await ev("(function(){var e=document.querySelector('#tray .uFz'); return e ? {b:e.querySelector('.uFzT b').textContent, imgs:e.querySelectorAll('img').length, a:e.getAttribute('data-a')} : null;})()")
+        ok('합체 단추: 상대 탑과 결과 탑 그림', bool(f0) and '천상궁' in f0['b'] and f0['imgs'] == 3 and f0['a'] == 'fuse', f0)
+        await shot('fuse')
+        await tap_el('#tray .uFz', 350)
+        f1 = await ev("(function(){var e=document.querySelector('#tray .uFz.sel strong'); return [e?e.textContent:'', __td.G().towers.length, window.__fzCalls];})()")
+        ok('합체 한 번: 고르기만', '합체' in f1[0] and f1[1] == fz[4], f1)
+        await tap_el('#tray .uFz', 500)
+        f2 = await ev("(function(){var g=__td.G(), t=__uib.UI.tray && __uib.UI.tray.t; return {n:g.towers.length, k:t?t.k:null, title:document.querySelector('#tray .tt b')?document.querySelector('#tray .tt b').textContent:'', fz:!!document.querySelector('#tray .uFz')};})()")
+        ok('합체 두 번 → 탑 하나로, 쟁반은 새 탑', f2['n'] == fz[4] - 1 and f2['k'] == 'fz_skybow' and '천상궁' in f2['title'] and not f2['fz'], f2)
+        await shot('fused')
+        # 합체 잠금 안내, 재료 안내, 엔진 함수가 없으면 숨김
+        await ev("(function(){var g=__td.G(), t=g.towers[1]; t.lvl=5; t.br=1; g.fuse=false; __uib.re(); __uib.tower(t);})()"); await pg.wait_for_timeout(200)
+        h1 = await ev("(function(){var e=document.querySelector('#tray .uFzH'); return e?e.textContent:'';})()")
+        await ev("(function(){var g=__td.G(); g.fuse=true; __uib.tower(g.towers[1]);})()"); await pg.wait_for_timeout(200)
+        h2 = await ev("(function(){var e=document.querySelector('#tray .uFzH'); return e?e.textContent:'';})()")
+        ok('합체 잠금 이유와 재료 안내', '합체는' in h1 and '열립니다' in h1 and '합체' in h2 and '재료' in h2 and 'Ⅴ단계' in h2, [h1, h2])
+        await shot('fuse_hint')
+        await ev("__uib.close()")
+
+        # ---------- 6. 도전 규칙 칩, 건설 막힘 알림 ----------
+        await ev("(function(){var g=__td.G(); g.M.ruleName='짙은 안개'; g.M.ruleDesc='안개가 끼어 모든 탑의 사거리가 15% 줄어듭니다.'; g.rule=g.rule||{id:'fog'}; __uib.hud();})()"); await pg.wait_for_timeout(300)
+        ok('규칙 칩 표시', await ev("(function(){var b=document.getElementById('hRule'); return !!b && !b.classList.contains('hide') && b.getBoundingClientRect().width>=24;})()"))
+        await pg.wait_for_timeout(2300)
+        ok('판이 시작되면 규칙 설명이 한 번 뜸', await ev("(function(){var t=document.getElementById('uRuleTip'); return !!t && !t.classList.contains('hide') && t.textContent.indexOf('짙은 안개')>=0 && t.textContent.indexOf('15%')>=0;})()"))
+        await shot('rule_tip', 100)
+        r = await tap_el('#hRule', 350)
+        ok('칩 탭 → 설명 닫힘', await ev("document.getElementById('uRuleTip').classList.contains('hide')"), r)
+        r = await tap_el('#hRule', 350)
+        tp = await ev("(function(){var t=document.getElementById('uRuleTip'), r=t.getBoundingClientRect(), h=document.getElementById('hud').getBoundingClientRect(); return {on:!t.classList.contains('hide'), in:r.left>=0&&r.right<=innerWidth&&r.top>=h.bottom-1, txt:t.textContent};})()")
+        ok('칩 탭 → 설명 열림(위 막대 아래, 화면 안)', tp['on'] and tp['in'] and '사거리' in tp['txt'], tp)
+        await tap_el('#hRule', 300)
+        had = await ev("typeof ruleBlocks === 'function'")
+        await ev("var g=__td.G(); window.__rb = g.rule; g.rule = { id: 'ban', kinds: ['catapult'] }; 1")   # 실제 규칙(ban)으로 막음
+        fc = await ev("""(function(){var g=__td.G(); for (var r=g.rows-3;r>1;r--) for (var c=0;c<g.cols;c++){ var k=r*g.cols+c; if (g.kind[k]==='g'&&g.towerAt[k]<0&&!(g.obsAt[k]>=0&&g.obs[g.obsAt[k]].alive)) return [c,r]; } return null;})()""")
+        x3, y3 = await cell_xy(fc[0], fc[1]); await tap_xy(x3, y3, 400)
+        n0 = await ev("__td.G().towers.length")
+        await tap_el('.tc[data-k="catapult"]', 350); await tap_el('.tc[data-k="catapult"]', 350)
+        rb = await ev("(function(){return {no:!!document.querySelector('#tray .tc.no[data-k=\"catapult\"]'), toast:document.getElementById('toast').textContent, note:(document.querySelector('#tray .uNo')||{}).textContent||'', go:!!document.querySelector('#tray .tgo'), n:__td.G().towers.length};})()")
+        ok('규칙이 건설을 막으면 알림(ruleBlocks)', rb['no'] and '사용 금지' in rb['toast'] and '투석기' in rb['note'] and not rb['go'] and rb['n'] == n0, rb)
+        await shot('rule_block')
+        await ev("__td.G().rule = window.__rb; __uib.close(); 1")
+
+        # ---------- 7. 웨이브 미리보기 ----------
+        wv = await ev("""(function(){var g=__td.G(), W=g.waves[g.wave], k0=W.groups[0]; window.__wg=W.groups; W.groups=[{type:'goblin',n:7},{type:'boat',n:3}].map(function(o){var q={}; for (var k in k0) q[k]=k0[k]; q.type=o.type; q.n=o.n; return q;}); __uib.wave(); var b=document.getElementById('bWave').getBoundingClientRect(), cs=[].slice.call(document.querySelectorAll('#waveIcons .wi1'));
+          return {n:cs.length, sea:!!document.querySelector('#waveIcons .wi1.ds .uDm.s'), warn:!!document.querySelector('#waveLbl .uDm.s'), fit:cs.every(function(e){var r=e.getBoundingClientRect(); return r.left>=b.left&&r.right<=b.right-2&&r.top>=b.top&&r.bottom<=b.bottom;})};})()""")
+        ok('다음 웨이브: 바다 적 칩과 영역 표시', wv['sea'] and wv['warn'] and wv['fit'], wv)
+        wv = await ev("""(function(){var g=__td.G(), W=g.waves[g.wave], keep=W.groups; W.groups=[{type:'goblin',n:24},{type:'orc',n:12},{type:'wolf',n:9},{type:'knight',n:6},{type:'bat',n:15},{type:'boat',n:4}].map(function(o){var q={}; for (var k in keep[0]) q[k]=keep[0][k]; q.type=o.type; q.n=o.n; return q;});
+          __uib.wave(); var b=document.getElementById('bWave').getBoundingClientRect(), cs=[].slice.call(document.querySelectorAll('#waveIcons .wi1'));
+          var o={n:cs.length, more:(document.querySelector('#waveIcons .wi1.mo')||{}).textContent||'', air:!!document.querySelector('#waveIcons .wi1.da'), sea:!!document.querySelector('#waveIcons .wi1.ds'), warn:document.querySelectorAll('#waveLbl .uDm.wn1').length,
+            fit:cs.every(function(e){var r=e.getBoundingClientRect(); return r.left>=b.left&&r.right<=b.right-2&&r.top>=b.top&&r.bottom<=b.bottom;}), lbl:(function(){var l=document.getElementById('waveLbl').getBoundingClientRect(); return l.right<=b.right && l.left>=b.left;})()}; return o;})()""")
+        ok('6종 웨이브: 하늘과 바다가 먼저, 안 잘리고 +N', wv['air'] and wv['sea'] and wv['warn'] == 2 and wv['fit'] and wv['lbl'] and wv['more'].startswith('+') and wv['n'] >= 3, wv)
+        await shot('wave6')
+
+        # ---------- 8. 일시 정지: 규칙, 관리자 단추 ----------
+        r = await tap_el('#bPause', 500)
+        ok('일시 정지: 관리자 아니면 단추 없음, 규칙 설명 있음', not await ev("!!document.getElementById('pAdm')") and await ev("(document.querySelector('#modal .uPRule')||{textContent:''}).textContent.indexOf('짙은 안개')>=0"), r)
+        await tap_el('#pRes', 400)
+        await ev("__td.SAVE().admin = 1; 1")
+        await tap_el('#bPause', 500)
+        ad = await ev("!!document.getElementById('pAdm') || !!document.getElementById('admPause')")
+        await shot('pause_admin')
+        ok('관리자면 일시 정지 창에 관리자 단추', ad)
+        await ev("__td.closeModal()")
+        await ev("__td.SAVE().admin = 0; 1"); await pg.wait_for_timeout(300)
+        ok('계속하기 뒤 전투가 다시 돎', not await ev("__td.st().paused") and not await ev("__td.st().modal"))
+
+        # ---------- 9. 결과 창: 확정 보상, 해금 안내 ----------
+        await ev("__td.closeModal()")
+        await start(2, LINE)
+        g0 = await ev("__td.SAVE().gems||0")
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});"); await pg.wait_for_timeout(2700)
+        rwM = await ev("JSON.stringify(__td.MAPS[2].reward)")
+        rs = await ev("(function(){var m=document.getElementById('modal'); return {kind:__td.st().kind, rw:(m.querySelector('.rgain.rw')||{textContent:''}).textContent, unl:[].slice.call(m.querySelectorAll('.uUnl b')).map(function(e){return e.textContent;}), gems:__td.SAVE().gems||0, scroll:m.scrollHeight>m.clientHeight+1};})()")
+        ok('승리 결과: 판의 확정 보상 표시 ' + rwM, rs['kind'] == 'result' and '보상' in rs['rw'] and ('노포' in rs['rw'] if 'ballista' in rwM else True), rs)
+        ok('승리 결과: 갈래 변신 해금 안내, 스크롤 없음', any('갈래 변신' in u for u in rs['unl']) and not rs['scroll'], rs['unl'])
+        await shot('result')
+        if await ev("!!document.getElementById('rwLayer')"): await tap_el('#rwOk', 400)   # 탑 보상 획득 연출이 결과 창을 덮음
+        await tap_el('#rRetry', 1300); await pick_cards()
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});"); await pg.wait_for_timeout(2700)
+        rs2 = await ev("(function(){var m=document.getElementById('modal'); return {rw:!!m.querySelector('.rgain.rw'), unl:m.querySelectorAll('.uUnl').length, gems:__td.SAVE().gems||0};})()")
+        ok('두 번째 승리: 확정 보상과 해금 안내는 다시 안 나옴', not rs2['rw'] and rs2['unl'] == 0 and rs2['gems'] == rs['gems'], rs2)
+
+        print('오류:', errs[:10])
+        ok('콘솔 오류 0', not errs, errs[:3])
+        bad = [n for n, c in RES if not c]
+        print('결과: %d/%d 통과' % (len(RES) - len(bad), len(RES)), '실패:', bad)
+        await b.close()
+asyncio.run(main())

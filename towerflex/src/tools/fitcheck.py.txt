@@ -1,0 +1,300 @@
+# 화면 맞춤 검사: python3 tools/fitcheck.py [크기들 쉼표] [--shots]
+# 크기마다 실제 손가락 탭으로 창을 열고 검사:
+#  1) 창 카드가 보이는 영역 안(위 >= 안전 영역 위, 아래 <= 화면 높이 - 안전 영역 아래)
+#  2) 문서와 창에 스크롤 없음(scrollHeight <= clientHeight + 1). 목록 안쪽 스크롤 칸(.rlist, .cgrid, .cdet)만 예외
+#  3) 창 안 요소가 카드 밖으로 삐져나오지 않음, 단추 글자가 단추 밖으로 넘치지 않음
+#  4) 단추 가운데 좌표의 elementFromPoint가 그 단추(다른 것에 가려지지 않음)
+# v1.3: 지역 2에 필요한 탑 칩, 소환, 확률 보기, 소환 결과(1회, 10회), 시작 능력 카드, 능력 카드(조합 배지), 빌드 보기
+# 창: 지역 1, 2(필요한 탑 칩), 3(우두머리), 6, 12 / 상점(탑, 화살 탭) / 광고 자리 / 오늘 임무 / 도감(탑, 적, 보상 단추) / 설정 / 공방 /
+#     이야기 / 전투 아래 막대 / 일시 정지 / 새 적 카드 / 패배 결과(광고 이어하기) / 승리 결과
+# v2.0(UIA): 챕터 고르기, 챕터 지도 4장(판 12 + 보너스 3, 스크롤 없음), 판 창(도전 규칙, 필요한 탑, 확정 보상, 편성), 편성 창, 탑 상세, 도감(탑, 적 챕터 탭, 합체), 확정 보상 연출, 옛 저장 안내
+#   판 자료가 모자라도 전 챕터를 보도록 시험 안에서만 __ch.fake(12)로 판을 늘리고, 보너스 칸은 가짜 bnOpen/bnState로 본다(빌드에는 넣지 않음)
+# 안전 영역 흉내(노치 30px, 제스처 바 24px)로 한 번 더: 360x742s
+import sys, os, asyncio
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+SIZES = ['320x568', '360x560', '360x640', '360x660', '360x742', '360x780', '375x667', '390x844', '393x852', '412x732', '412x915', '360x742s']
+SHOT_SIZES = {'360x560', '360x742', '412x915'}
+ALLOW = ['.rlist', '.cgrid', '.cdet', '.bvList', '.loGrid', '.fzList', '.gpList']
+QUICK = '--quick' in sys.argv   # 전투 밖 화면만(설정, 공방, 전투, 결과는 건너뜀)
+
+CHECK = r"""(function(arg){
+  var sel = arg[0], allow = arg[1], edge = !!arg[2], fails = [];
+  function desc(e){ if (!e) return 'null'; return (e.id ? '#' + e.id : e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().replace(/\s+/g, '.') : '')) + (e.textContent ? ' "' + e.textContent.trim().slice(0, 14) + '"' : ''); }
+  var pr = document.getElementById('__fitProbe');
+  if (!pr) { pr = document.createElement('div'); pr.id = '__fitProbe'; pr.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)'; document.body.appendChild(pr); }
+  var sat = parseFloat(getComputedStyle(pr).paddingTop) || 0, sab = parseFloat(getComputedStyle(pr).paddingBottom) || 0;
+  var H = innerHeight, W = innerWidth;
+  var de = document.documentElement, bd = document.body, app = document.getElementById('app');
+  if (de.scrollHeight > de.clientHeight + 1) fails.push('문서 스크롤 ' + de.scrollHeight + '>' + de.clientHeight);
+  if (bd.scrollHeight > bd.clientHeight + 1) fails.push('body 스크롤 ' + bd.scrollHeight + '>' + bd.clientHeight);
+  var ar = app.getBoundingClientRect(); if (Math.abs(ar.height - H) > 1.5 || ar.top !== 0) fails.push('#app 높이 ' + ar.top + '/' + ar.height + ' (화면 ' + H + ')');
+  var M = document.querySelector(sel); if (!M) return { fails: ['없음 ' + sel] };
+  var r = M.getBoundingClientRect();
+  // edge: 화면 끝까지 칠하는 막대(지도 위아래). 막대는 화면 안이면 되고, 안쪽 단추가 안전 영역 안이어야 함
+  var lim0 = edge ? 0 : sat, lim1 = edge ? H : H - sab;
+  if (r.top < lim0 - 0.5 || r.bottom > lim1 + 0.5 || r.left < -0.5 || r.right > W + 0.5) fails.push('카드가 화면 밖 ' + [r.top, r.bottom, H, sat, sab].map(Math.round).join('/'));
+  if (edge) M.querySelectorAll('button').forEach(function(b){ var q = b.getBoundingClientRect(); if (!q.width && !q.height) return; if (q.top < sat - 0.5 || q.bottom > H - sab + 0.5) fails.push('단추가 안전 영역 밖 ' + desc(b) + ' ' + [q.top, q.bottom].map(Math.round).join('/')); });
+  if (M.scrollHeight > M.clientHeight + 1) fails.push('창 스크롤 ' + M.scrollHeight + '>' + M.clientHeight);
+  var mcs = getComputedStyle(M);
+  if (M.scrollWidth > M.clientWidth + 1 && !/(hidden|clip)/.test(mcs.overflowX)) fails.push('창 가로 넘침 ' + M.scrollWidth + '>' + M.clientWidth);
+  var holder = M.parentNode; if (holder && holder.scrollHeight > holder.clientHeight + 1) fails.push('창 바탕 스크롤');
+  var nIn = 0, nBtn = 0;
+  M.querySelectorAll('*').forEach(function(e){
+    var cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || e.offsetParent === null && cs.position !== 'fixed') return;
+    var isAllow = allow.some(function(a){ return e.matches(a); });
+    var inAllow = allow.some(function(a){ var c = e.parentElement && e.parentElement.closest(a); return !!c && M.contains(c); });
+    if (/(auto|scroll)/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1 && !isAllow) fails.push('안쪽 스크롤 ' + desc(e));
+    if (inAllow) return;
+    var b = e.getBoundingClientRect(); if (b.width === 0 && b.height === 0) return;
+    if (cs.position === 'absolute' && /\b(dot|cgem)\b/.test(e.className)) return;
+    nIn++;
+    if (b.top < r.top - 1 || b.bottom > r.bottom + 1 || b.left < r.left - 1 || b.right > r.right + 1) fails.push('카드 밖 ' + desc(e) + ' ' + [b.top, b.bottom].map(Math.round).join('/'));
+  });
+  M.querySelectorAll('button').forEach(function(b){
+    var bb = b.getBoundingClientRect(); if (!bb.width || !bb.height) return;
+    var sc = null; allow.forEach(function(a){ var c = b.closest(a); if (c && M.contains(c)) sc = c; });
+    if (sc) { var cr = sc.getBoundingClientRect(); if (bb.top < cr.top || bb.bottom > cr.bottom) return; }
+    nBtn++;
+    var x = bb.left + bb.width / 2, y = bb.top + bb.height / 2, t = document.elementFromPoint(x, y);
+    if (!t || !(t === b || b.contains(t))) fails.push('탭 막힘 ' + desc(b) + ' → ' + desc(t));
+    // 단추 글자가 단추 밖으로: 글자 조각마다 위치를 재서 확인 (절대 위치 딱지 안의 글자는 제외)
+    var tw = document.createTreeWalker(b, NodeFilter.SHOW_TEXT), tn, over = false;
+    while ((tn = tw.nextNode())) { if (!tn.textContent.trim()) continue; var pe = tn.parentElement, abs = false; while (pe && pe !== b) { if (getComputedStyle(pe).position === 'absolute') { abs = true; break; } pe = pe.parentElement; } if (abs) continue;
+      var rg = document.createRange(); rg.selectNodeContents(tn); var rects = rg.getClientRects(); for (var q = 0; q < rects.length; q++) { var rc = rects[q]; if (rc.left < bb.left - 1 || rc.right > bb.right + 1 || rc.top < bb.top - 1 || rc.bottom > bb.bottom + 1) over = true; } }
+    if (over) fails.push('단추 글자 넘침 ' + desc(b));
+  });
+  return { fails: fails, top: Math.round(r.top), bottom: Math.round(r.bottom), H: H, n: nIn, btn: nBtn };
+})"""
+
+async def run_size(p, spec):
+    safe = spec.endswith('s'); W, H = map(int, spec.rstrip('s').split('x'))
+    b = await p.chromium.launch()
+    ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=3, is_mobile=True, has_touch=True)
+    pg = await ctx.new_page()
+    errs = []
+    pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+    pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+    if safe:
+        cdp = await ctx.new_cdp_session(pg)
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', {'insets': {'top': 30, 'bottom': 24, 'left': 0, 'right': 0}})
+    await pg.goto('file://' + ROOT + '/out/index.html')
+    await pg.wait_for_timeout(1300)
+    res = []
+    async def ev(js, arg=None): return await pg.evaluate(js, arg) if arg is not None else await pg.evaluate(js)
+    async def check(name, sel, shot=None, wait=420, edge=False):
+        await pg.wait_for_timeout(wait)
+        r = await ev(CHECK, [sel, ALLOW, edge])
+        ok = not r['fails']
+        res.append((name, ok, r))
+        if not ok: print('  실패 %-14s %s' % (name, r['fails'][:4]))
+        if shot and spec in SHOT_SIZES: await pg.screenshot(path=OUT + 'fit_%s_%s.png' % (spec, shot))
+        return r
+    async def tap_sel(sel, idx=0, wait=450):
+        r = await ev("""(function(a){var e=document.querySelectorAll(a[0])[a[1]]; if(!e) return null; var b=e.getBoundingClientRect(); var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y); return {x:x,y:y,hit:!!t&&(t===e||e.contains(t))};})""", [sel, idx])
+        if not r: res.append(('탭 ' + sel, False, {'fails': ['없음']})); print('  없음', sel); return None
+        if not r['hit']: res.append(('탭 ' + sel, False, {'fails': ['가려짐']})); print('  가려짐', sel)
+        await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(wait)
+        return r
+    async def wait_kind(kind, ms=6000):
+        # 창이 바뀔 때까지 기다림(시험 기계가 느리면 탭 뒤 창이 늦게 뜬다)
+        t = 0
+        while t < ms:
+            if await ev("__td.st().kind") == kind: await pg.wait_for_timeout(350); return True
+            await pg.wait_for_timeout(200); t += 200
+        res.append(('창 ' + kind, False, {'fails': ['안 뜸']})); print('  안 뜸', kind); return False
+    async def tap_node(i):
+        # 지도를 굴려 노드를 화면 가운데쯤에 두고 손가락 탭 (touchflow.py 방식)
+        r = await ev("""(function(i){var n=document.querySelectorAll('.node')[i], w=document.getElementById('mapWrap'); var b=n.getBoundingClientRect(); w.scrollTop += b.top - w.clientHeight*0.45; return true;})""", i)
+        await pg.wait_for_timeout(250)
+        r = await ev("""(function(i){var n=document.querySelectorAll('.node')[i].querySelector('.nb'); var b=n.getBoundingClientRect(); var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y); return {x:x,y:y,hit:!!t&&(t===n||n.contains(t)||t.closest('.node')===n.parentNode)};})""", i)
+        if not r['hit']: res.append(('노드 %d 가려짐' % (i + 1), False, {'fails': ['가려짐']}))
+        await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(300)
+        await wait_kind('stage')
+    async def close_modal():
+        if await ev("!document.getElementById('sModal').classList.contains('hide')"):
+            sel = await ev("""(function(){var m=document.getElementById('modal'); var b=m.querySelector('#bClose')||m.querySelector('.xbtn')||m.querySelector('#rDone'); return b ? (b.id ? '#'+b.id : '.xbtn') : null;})()""")
+            if sel: await tap_sel('#modal ' + sel if not sel.startswith('#') else sel, 0, 450)
+            else: await ev("__meta.close()")
+
+    # 준비: 모든 지역 열기, 도감 보상 하나 받을 수 있게, 보석 조금
+    await ev("__ch.fake(12); __td.unlockAll(); var s=__td.SAVE(); s.seen={goblin:1,orc:1,wolf:1,knight:1,bat:1,stalker:1}; s.slain={goblin:1,orc:1}; s.codexGot={goblin:1}; s.fused={fz_skybow:1}; s.towers.frost={n:1,star:2}; s.towers.warship={n:1,star:0}; s.towers.sniper={n:2,star:1}; __meta.gems(75); __td.MAPS[1].need=['archer','frost','bell'];")
+    await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1200)
+    # v2.0 챕터 고르기: 카드 4장이 위아래 막대 사이에 스크롤 없이
+    await check('챕터 고르기', '#chSel', 'chsel', 300, True)
+    cards = await ev("""(function(){var o=[], t=document.querySelector('.mtop .mtr').getBoundingClientRect().bottom, b=document.querySelector('.mbot .btn').getBoundingClientRect().top; document.querySelectorAll('.chCard').forEach(function(c){var r=c.getBoundingClientRect(), tx=c.querySelector('.ccT').getBoundingClientRect(), bx=c.querySelector('.ccB').getBoundingClientRect(); if (r.top < t - 1 || r.bottom > b + 1 || r.height < 84 || tx.bottom > bx.top + 1) o.push([c.className, Math.round(r.top), Math.round(r.bottom), Math.round(tx.bottom), Math.round(bx.top)]);}); return [document.querySelectorAll('.chCard').length, o];})()""")
+    okc = cards[0] >= 4 and not cards[1]
+    res.append(('챕터 카드 4장', okc, {'fails': [] if okc else [str(cards)]}))
+    if not okc: print('  실패 챕터 카드', cards)
+    # 옛 저장 이전 안내 창
+    await ev("var s=__td.SAVE(); s.from='lastarrow.v4'; delete s.fromSeen; __ch.sel();")
+    await check('옛 저장 안내', '#modal', 'migrate')
+    await tap_sel('#mgOk', 0, 400)
+    # 챕터 지도 4장: 가짜 보너스 칸까지 넣어 노드가 막대에 가리지 않고 스크롤 없이 들어가는지
+    for ch in [4, 3, 2, 1]:
+        await ev("__ch.map(%d)" % ch)
+        await check('지도 %d장' % ch, '#nodes', 'chmap%d' % ch, 350, True)
+        mp = await ev("""(function(){var w=document.getElementById('mapWrap'), o=[], t=document.querySelector('.mtop .mtr').getBoundingClientRect().bottom, b=document.querySelector('.mbot .btn').getBoundingClientRect().top;
+          document.querySelectorAll('#nodes .node, #nodes .bnode').forEach(function(n){var r=n.getBoundingClientRect(); if (r.top < t - 2 || r.bottom > b + 2 || r.left < -1 || r.right > innerWidth + 1) o.push([n.className, Math.round(r.top), Math.round(r.bottom), Math.round(r.left), Math.round(r.right)]);});
+          return [w.scrollHeight <= w.clientHeight + 1, document.querySelectorAll('#nodes .node').length, o.slice(0, 4), Math.round(t), Math.round(b), document.body.getAttribute('data-ch')];})()""")
+        okm = mp[0] and mp[1] == 12 and not mp[2] and mp[5] == str(ch)
+        res.append(('지도 %d장 배치' % ch, okm, {'fails': [] if okm else [str(mp)]}))
+        if not okm: print('  실패 지도 배치', ch, mp)
+        if ch > 1:
+            await tap_node(3)
+            await check('판 창 %d장' % ch, '#modal', 'stage_ch%d' % ch)
+            await tap_sel('#bClose', 0, 450)
+    await check('지도 위 막대', '.mtop', 'map', 200, True)
+    await check('지도 아래 막대', '.mbot', None, 0, True)
+    # 지도 아래 막대와 위 보석 칸 단추 탭 확인
+    tiles = await ev("""(function(){var o=[]; document.querySelectorAll('.mbot .btn, #mGem, #mBack').forEach(function(b){var r=b.getBoundingClientRect(), t=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2); o.push([b.id, !!t&&(t===b||b.contains(t)), Math.round(r.bottom), b.scrollWidth<=b.clientWidth+1]);}); return o;})()""")
+    sab = await ev("parseFloat(getComputedStyle(document.getElementById('__fitProbe')).paddingBottom)||0")
+    bad = [t for t in tiles if not t[1] or not t[3] or (t[0] != 'mGem' and t[2] > H - sab)]
+    res.append(('지도 단추', not bad, {'fails': bad}))
+    if bad: print('  실패 지도 단추', bad)
+    # 지역 창
+    for mi in [0, 1, 2, 5, 11]:
+        await tap_node(mi)
+        r = await check('지역 %d' % (mi + 1), '#modal', 'stage%d' % (mi + 1))
+        pv = await ev("""(function(){var c=document.getElementById('prevCv'); if (!c || document.getElementById('sModal').classList.contains('hide')) return [0, 0, 0, 0, 0, 0, __td.st().kind, document.getElementById('modal').textContent.slice(0, 40)]; var b=c.parentNode, d=Math.min(2,devicePixelRatio||1); return [Math.round(b.clientWidth), Math.round(b.clientHeight), c.width, c.height, Math.round(b.clientWidth*d), Math.round(b.clientHeight*d)];})()""")
+        okp = pv[1] >= 44 and abs(pv[2] - pv[4]) <= 1 and abs(pv[3] - pv[5]) <= 1
+        res.append(('미리보기 %d' % (mi + 1), okp, {'fails': [] if okp else ['미리보기 크기 %s' % pv]}))
+        if not okp: print('  실패 미리보기', mi + 1, pv)
+        if mi == 1:
+            chip = await ev("!!document.querySelector('.needRow .nd.off') && !!document.querySelector('.stRule') && !!document.querySelector('.stRw') && document.querySelectorAll('#stLo .loS').length === 8"); res.append(('필요한 탑, 도전 규칙, 보상, 편성 8칸', chip, {'fails': [] if chip else ['칩 없음']}))
+            # v2.0 편성 창 → 탑 고름 → 탑 상세(단계 칸) → 돌아와 확인
+            await tap_sel('#stLo', 0, 300); await wait_kind('lo')
+            await check('편성 창', '#modal', 'lo')
+            await tap_sel('.loT[data-k="frost"]', 0, 350)
+            await check('편성 창 고름', '#modal', 'lo_sel', 100)
+            await tap_sel('#loDet', 0, 300); await wait_kind('twd')
+            await check('탑 상세', '#modal', 'twd')
+            await tap_sel('.tdBr .tdS', 1, 350)
+            await check('탑 상세 단계 고름', '#modal', None, 100)
+            await tap_sel('#tdBack', 0, 300); await wait_kind('lo')
+            await tap_sel('#loOk', 0, 300); await wait_kind('stage')
+            back = await ev("__td.st().kind") == 'stage'; res.append(('편성 확인 → 판 창', back, {'fails': [] if back else ['안 돌아옴']}))
+        if mi == 2: tb = await tap_sel('.tab[data-dk="easy"]', 0, 300); on = await ev("!!document.querySelector('.tab.on[data-dk=\"easy\"]')"); res.append(('난이도 탭', on, {'fails': [] if on else ['안 바뀜']})); await check('지역 3 쉬움', '#modal', None, 100)
+        await tap_sel('#bClose', 0, 450)
+    # 상점 두 탭, 광고 자리
+    await tap_sel('#bShop', 0, 600)
+    await check('상점 탑', '#modal', 'shop_tower')
+    await tap_sel('.tab[data-t="proj"]', 0, 400)
+    await check('상점 화살', '#modal', 'shop_proj')
+    await tap_sel('.skc[data-id="heart"]', 0, 350)
+    await check('상점 고름', '#modal', None, 100)
+    await tap_sel('#adGem', 0, 700)
+    await check('광고 자리', '#adLayer .modal', 'ad')
+    # 시제품 광고 자리는 5초 뒤 스스로 닫힌다. 시험 기계가 느리면 그 사이에 닫히므로, 있으면 누르고 닫힐 때까지 기다림
+    if await ev("!!document.getElementById('adX')"): await tap_sel('#adX', 0, 400)
+    for i in range(40):
+        if await ev("document.getElementById('adLayer').classList.contains('hide')"): break
+        await pg.wait_for_timeout(250)
+    await close_modal()
+    # v1.3 탑 소환: 소환 화면, 확률 보기, 1회 결과, 10회 결과
+    await tap_sel('#bGacha', 0, 600)
+    await check('소환', '#modal', 'gacha')
+    await tap_sel('#gcProb', 0, 500)
+    await check('확률 보기', '#modal', 'gprob')
+    await tap_sel('#gpBack', 0, 500)
+    await ev("__meta.gems(400)")
+    await tap_sel('#gc1', 0, 1700)
+    await check('소환 결과 1회', '#modal', 'gres1', 100)
+    await tap_sel('#grOk', 0, 500)
+    await tap_sel('#gc10', 0, 400)
+    await tap_sel('#grSkip', 0, 900)
+    await check('소환 결과 10회', '#modal', 'gres10', 100)
+    await tap_sel('#grOk', 0, 500)
+    await tap_sel('#gcClose', 0, 500)
+    # 오늘 임무
+    await tap_sel('#bQuest', 0, 600)
+    await check('오늘 임무', '#modal', 'quest')
+    await close_modal()
+    # 도감 (보상이 있으면 적 탭이 먼저 열림)
+    await tap_sel('#bCodex', 0, 600)
+    await check('도감 적', '#modal', 'codex_enemy')
+    await tap_sel('.tab[data-t="tower"]', 0, 400)
+    await check('도감 탑', '#modal', 'codex_tower')
+    await tap_sel('.ci', 3, 300); await wait_kind('twd')
+    await check('도감 탑 상세', '#modal', 'codex_twd')
+    await tap_sel('#tdBack', 0, 300); await wait_kind('codex')
+    await tap_sel('.tab[data-t="fuse"]', 0, 400)
+    await check('도감 합체', '#modal', 'codex_fuse')
+    await close_modal()
+    # v2.0 확정 보상 획득 연출
+    await ev("__ch.reward('frost', true)")
+    await check('보상 획득 연출', '#rwLayer .rwCard', 'reward', 700)
+    await tap_sel('#rwOk', 0, 400)
+    if QUICK:
+        await b.close(); return res, errs
+    # 설정, 공방
+    await tap_sel('#bSet', 0, 600)
+    await check('설정', '#modal', 'settings')
+    await close_modal()
+    await tap_sel('#bRes', 0, 600)
+    await check('공방', '#modal', 'research')
+    await tap_sel('#rDone', 0, 900)
+    # 이야기 → 전투
+    await tap_node(0)
+    await tap_sel('#bGo', 0, 1000)
+    if await ev("!document.getElementById('story').classList.contains('hide')"):
+        await check('이야기', '#story .sbox', 'story', 200)
+        st = await ev("""(function(){var b=document.getElementById('stSkip').getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight;})()""")
+        res.append(('이야기 건너뛰기', st, {'fails': [] if st else ['밖']}))
+        await tap_sel('#stSkip', 0, 1200)
+    await pg.wait_for_timeout(800)
+    # 전투 아래 막대: 기술 단추와 웨이브 단추가 화면 안, 제스처 바(안전 영역) 위, 탭 가능
+    bb = await ev("""(function(){var p=getComputedStyle(document.getElementById('__fitProbe')), sab=parseFloat(p.paddingBottom)||0, o=[];
+      document.querySelectorAll('#bottom .sk, #bWave, #bPause, #bSpeed').forEach(function(b){var r=b.getBoundingClientRect(), t=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
+        var lab=b.querySelector('em'), lb=lab?lab.getBoundingClientRect().bottom:r.bottom;
+        if (!(t&&(t===b||b.contains(t))) || Math.max(r.bottom, lb) > innerHeight - Math.max(sab, 6) + 0.5 || r.top < 0) o.push([b.id, Math.round(r.bottom), Math.round(lb), innerHeight, sab]);}); return o;})()""")
+    res.append(('전투 아래 막대', not bb, {'fails': bb}))
+    if bb: print('  실패 전투 아래 막대', bb)
+    if spec in SHOT_SIZES: await pg.screenshot(path=OUT + 'fit_%s_battle.png' % spec)
+    await tap_sel('#bPause', 0, 500)
+    await check('일시 정지', '#modal', 'pause')
+    await tap_sel('#pRes', 0, 400)
+    await ev("__meta.card('wolf')")
+    await check('새 적 카드', '#modal', 'card')
+    await tap_sel('#bOk', 0, 400)
+    # v1.3 능력 카드: 시작 카드, 조합 배지 카드 (가짜 pick 사건), 빌드 보기
+    await ev("__gc.fakePick(true)")
+    await check('시작 능력 카드', '#modal', 'pick_start', 700)
+    await tap_sel('.pkc', 0, 900)
+    await ev("__gc.fakePick(false, true)")
+    await check('능력 카드 조합', '#modal', 'pick_combo', 700)
+    await tap_sel('.pkc', 1, 900)
+    await ev("__gc.build('archer')")
+    await check('빌드 보기', '#modal', 'build', 500)
+    await tap_sel('#bvClose', 0, 400)
+    # 패배 결과 (광고 이어하기 단추 포함)
+    await ev("var g=__td.G(); g.lives=0; g.over=-1; g.ev.push({t:'lose'});")
+    await pg.wait_for_timeout(2300)
+    r = await check('패배 결과', '#modal', 'lose')
+    hasc = await ev("!!document.getElementById('rCont')")
+    res.append(('이어하기 단추', hasc, {'fails': [] if hasc else ['없음']}))
+    # 승리 결과
+    await tap_sel('#rRetry', 0, 900)
+    await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});")
+    await pg.wait_for_timeout(2600)
+    await check('승리 결과', '#modal', 'win')
+    await b.close()
+    return res, errs
+
+async def main():
+    sizes = SIZES
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    if args: sizes = args[0].split(',')
+    total = 0; failed = 0; allerr = []
+    async with async_playwright() as p:
+        for s in sizes:
+            print('[%s]' % s)
+            res, errs = await run_size(p, s)
+            n = len(res); f = [x[0] for x in res if not x[1]]
+            total += n; failed += len(f)
+            print('  %d/%d 통과%s' % (n - len(f), n, ('  실패: ' + ', '.join(f)) if f else ''), ' 콘솔 오류 %d' % len(errs))
+            allerr += errs
+    print('전체: %d/%d 통과, 콘솔 오류 %d' % (total - failed, total, len(allerr)))
+    for e in allerr[:10]: print('  ', e)
+asyncio.run(main())

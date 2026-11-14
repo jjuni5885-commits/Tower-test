@@ -1,0 +1,37 @@
+# v2.3.1 전수 점검: 모든 판 x 난이도(쉬움/보통/어려움) + 무한 차원전을 실제 그리기와 함께 봇으로 돌리며 오류 수집
+import asyncio, sys, json
+from playwright.async_api import async_playwright
+ROOT = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/tf'
+W, H = 360, 640
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        pg = await (await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)).new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE ' + str(e)[:300]))
+        pg.on('console', lambda m: errs.append('CON ' + m.text[:300]) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1500)
+        await pg.evaluate("__td.ownAll(); __td.unlockAll(); 1")
+        n = await pg.evaluate("__td.MAPS.length")
+        ids = await pg.evaluate("__td.MAPS.map(function(M){return M.id})")
+        res = {}; total = 0
+        for mi in range(n):
+            if ids[mi].startswith('t'): continue
+            for dk in ['easy', 'normal', 'hard'] + (['arena'] if mi == 0 else []):
+                e0 = len(errs)
+                await pg.evaluate("(function(a){ if (__td.G()) { try{__v22.stop()}catch(e){} } __td.closeModal(); __td.start(a[0], a[1]); })", [mi if dk != 'arena' else ids.index('c3s11'), dk])
+                await pg.wait_for_timeout(250)
+                await pg.evaluate("__td.closeModal(); __td.bot(1); __td.speed(3); 1")
+                for k in range(10):
+                    await pg.evaluate("""(function(){var g=__td.G(); if(!g||g.over) return; if (__td.st().modal) __td.closeModal(); if (g.waiting) document.getElementById('bWave').click(); __td.step(240);})()""")
+                    await pg.wait_for_timeout(90)
+                st = await pg.evaluate("(function(){var g=__td.G(); return {over:g.over, wave:g.wave, N:g.N, lives:g.lives, tw:g.towers.length, err:__td.st().err};})()")
+                total += 1
+                res[ids[mi] + ':' + dk] = st
+                if len(errs) > e0 or st.get('err'):
+                    print('오류', ids[mi], dk, errs[e0:][:3], st.get('err'))
+        print('판 실행', total, '오류', len(errs))
+        for e in errs[:20]: print('  ', e)
+        json.dump(res, open('/tmp/sweep23.json', 'w'))
+        await b.close()
+asyncio.run(main())

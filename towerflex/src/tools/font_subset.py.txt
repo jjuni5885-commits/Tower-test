@@ -1,0 +1,84 @@
+# 게임에서 쓰는 글자만 잘라 data URI 글꼴 CSS 만들기 (귀염판: 로고 Bagel Fat One, 제목과 숫자 Jua, 본문 Pretendard)
+# 사용: python3 tools/font_subset.py <src폴더> <node_modules 경로> <출력 css>
+# 준비: npm i @fontsource/jua @fontsource/bagel-fat-one pretendard && pip install --break-system-packages fonttools brotli
+# 두 글꼴 모두 SIL OFL 1.1. Pretendard는 'Pretendard'가 예약 글꼴 이름이라, 잘라 낸 수정판은 내부 이름을 'LA Sans'로 바꿔 넣음(저작권, 라이선스 항목은 그대로 둠)
+import sys, os, glob, io, base64
+from fontTools.ttLib import TTFont
+from fontTools import subset
+from fontTools.merge import Merger
+src, nm, out = sys.argv[1], sys.argv[2], sys.argv[3]
+text = ''
+for f in glob.glob(os.path.join(src, '*.js')) + glob.glob(os.path.join(src, '*.html')) + glob.glob(os.path.join(src, '*.css')):
+    text += open(f, encoding='utf-8').read()
+# 다국어(i18n): 한자, 가나, 태국, 데바나가리, 아랍 글자는 기기 글꼴로 그림 → 자르지 않음(일본어 가나만 Pretendard로 섞여 보이는 것도 막음)
+def sysfont(ch):
+    o = ord(ch)
+    return 0x0600 <= o <= 0x06FF or 0x0750 <= o <= 0x077F or 0x0900 <= o <= 0x097F or 0x0E00 <= o <= 0x0E7F or 0x3000 <= o <= 0x30FF or 0x3400 <= o <= 0x9FFF or 0xF900 <= o <= 0xFAFF or 0xFB50 <= o <= 0xFDFF or 0xFE30 <= o <= 0xFEFF or 0xFF00 <= o <= 0xFFEF
+chars = set(ch for ch in text if ord(ch) > 127 and not sysfont(ch)) | set(chr(c) for c in range(32, 127))
+chars |= set('→←↑↓×+-%!?…')
+print('chars', len(chars))
+
+def face(family, data, weight):
+    return "@font-face{font-family:'%s';src:url(data:font/woff2;base64,%s) format('woff2');font-weight:%s;font-style:normal;font-display:block}\n" % (family, base64.b64encode(data).decode(), weight)
+
+def opts():
+    o = subset.Options(); o.flavor = None; o.layout_features = ['*']; o.name_IDs = ['*']; o.name_languages = ['*']; o.notdef_outline = True; o.drop_tables = []
+    return o
+
+def fontsource(pkg, weight, family, wdesc):
+    """구글 글꼴처럼 여러 조각으로 나뉜 @fontsource 글꼴: 필요한 글자만 잘라 한 파일로 합침"""
+    files = sorted(glob.glob(os.path.join(nm, '@fontsource', pkg, 'files', '*-%d-normal.woff2' % weight)))
+    tmp = '/tmp/fsub_%s_%d' % (pkg, weight); os.makedirs(tmp, exist_ok=True)
+    parts, have = [], set()
+    for i, f in enumerate(files):
+        ft = TTFont(f); cmap = ft.getBestCmap() or {}
+        need = [ch for ch in chars if ord(ch) in cmap and ch not in have]
+        if not need: continue
+        have |= set(need)
+        s = subset.Subsetter(opts()); s.populate(text=''.join(need)); s.subset(ft)
+        p = os.path.join(tmp, '%03d.ttf' % i); ft.flavor = None; ft.save(p); parts.append(p)
+    miss = sorted(ch for ch in chars if ch not in have and ord(ch) > 32)
+    print(pkg, weight, 'pieces', len(parts), 'missing(본문 글꼴로 대신 그림):', ''.join(miss)[:120])
+    merged = Merger().merge(parts); merged.flavor = 'woff2'
+    bio = io.BytesIO(); merged.save(bio); data = bio.getvalue()
+    print(pkg, weight, '->', len(data), 'bytes')
+    return face(family, data, wdesc)
+
+def rename(ft, fam, style, ps):
+    full = fam + ' ' + style
+    for r in ft['name'].names:
+        if r.nameID == 1: r.string = full
+        elif r.nameID == 2: r.string = 'Regular'
+        elif r.nameID == 3: r.string = ps + ';subset'
+        elif r.nameID == 4: r.string = full
+        elif r.nameID == 6: r.string = ps
+        elif r.nameID == 16: r.string = fam
+        elif r.nameID == 17: r.string = style
+    if 'CFF ' in ft:
+        cff = ft['CFF '].cff; cff.fontNames = [ps]; td = cff.topDictIndex[0]
+        td.FullName = full; td.FamilyName = fam
+
+def pretendard(fname, weight, style):
+    ft = TTFont(os.path.join(nm, 'pretendard', 'dist', 'public', 'static', fname))
+    s = subset.Subsetter(opts()); s.populate(text=''.join(chars)); s.subset(ft)
+    rename(ft, 'LA Sans', style, 'LASans-' + style)
+    ft.flavor = 'woff2'; bio = io.BytesIO(); ft.save(bio); data = bio.getvalue()
+    print('pretendard', weight, '->', len(data), 'bytes')
+    return face('PRT', data, weight)
+
+# 귀염판: 로고는 Bagel Fat One(빵빵한 글꼴, 정해진 글자만), 제목, 숫자, 버튼은 Jua, 본문은 Pretendard
+LOGO_TEXT = '최후의 화살 귀염판 THE LAST ARROW 승리 패배 완벽 웨이브 보스 0123456789 !?+%/'
+# 다국어(i18n): 로고 글꼴 자리(제목, 웨이브 배너, 승리)에 나오는 라틴 글자(영어, 스페인어, 프랑스어, 포르투갈어, 인도네시아어, 스와힐리어). 베트남어는 i18n.js가 Pretendard로 바꿈
+LOGO_TEXT += 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,:;\'-()¡¿ÀÁÂÃÇÈÉÊËÍÎÏÑÓÔÕÚÛÜàáâãçèéêëíîïñóôõúûüŒœ'
+def fontsource_only(pkg, weight, family, wdesc, only):
+    global chars
+    keep = chars; chars = set(only) & keep | set(only)
+    try: return fontsource(pkg, weight, family, wdesc)
+    finally: chars = keep
+notice = ("/* 글꼴: Black Han Sans (Copyright 2015 Zess Type), Jua (Copyright 2017 The Jua Project Authors), Bagel Fat One (Copyright 2022 The Bagel Fat Project Authors), "
+          "Pretendard (Copyright (c) 2021 Kil Hyung-jin, with Reserved Font Name Pretendard; 이 파일에는 쓰는 글자만 잘라 'LA Sans'로 이름을 바꾼 수정판). "
+          "모두 SIL Open Font License 1.1, https://openfontlicense.org */\n")
+# v2.0: 타이틀 로고와 공통 제목은 굵은 고딕 Black Han Sans('BHS'). 1장(귀염) 화면은 Jua와 Bagel Fat One 그대로
+css = notice + fontsource_only('bagel-fat-one', 400, 'LOGO', '100 900', LOGO_TEXT) + fontsource('jua', 400, 'CUTE', '100 900') + (fontsource('black-han-sans', 400, 'BHS', '100 900') if os.path.isdir(os.path.join(nm, '@fontsource', 'black-han-sans')) else '') + pretendard('Pretendard-Medium.otf', 500, 'Medium') + pretendard('Pretendard-ExtraBold.otf', 800, 'ExtraBold')
+open(out, 'w').write(css)
+print('css bytes', len(css))

@@ -1,0 +1,302 @@
+# v1.3 탑 소환과 능력 카드 시험: python3 tools/gachaflow.py [가로x세로]
+# 옛 기록 옮기기 → 새 기록 처음 탑 → 무료 소환 하루 1번(손가락 탭) → 소환권 → 보석 30, 270 → 확률 대량 시뮬 → 천장 → 중복 별, 별 5 뒤 보석
+#   → 새로 고침 유지 → 처음 승리, 별 3개 소환권 → 오늘 임무 3개 보너스 → 지역 창 필요 탑 칩과 소환 단추 → 판 20개 지도(흉내)
+#   → 시작 능력 카드(가짜 pick 사건), 뒤로 가기로 안 닫힘, 고르면 재개 → 조합 연출 → 빌드 보기 → 진행 기록 지우기에도 탑 유지
+import sys, os, asyncio, json
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+RES = []
+def ok(name, cond, info=''):
+    RES.append((name, bool(cond)))
+    print(('통과 ' if cond else '실패 ') + name + ('  ' + str(info) if info != '' else ''))
+DATE_SHIM = r"""(() => { const RD = Date; const sh = () => { try { return (parseFloat(localStorage.getItem('__dayShift') || '0') || 0) * 864e5; } catch (e) { return 0; } };
+  function FD(...a) { if (!new.target) return new RD(RD.now() + sh()).toString(); return a.length ? new RD(...a) : new RD(RD.now() + sh()); }
+  FD.prototype = RD.prototype; FD.now = () => RD.now() + sh(); FD.parse = RD.parse; FD.UTC = RD.UTC; window.Date = FD; })();"""
+
+SLOW = float(os.environ.get('UIA_SLOW', '1'))
+async def main():
+    W, H = 360, 640
+    if len(sys.argv) > 1 and 'x' in sys.argv[1]: W, H = map(int, sys.argv[1].split('x'))
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        await ctx.add_init_script(DATE_SHIM)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        url = 'file://' + ROOT + '/out/index.html'
+        async def ev(js): return await pg.evaluate(js)
+        async def tap_el(sel, wait=450, idx=0):
+            for _ in range(3):
+                if await ev("!document.getElementById('story').classList.contains('hide')"): await ev("document.getElementById('stSkip').click()"); await pg.wait_for_timeout(500)
+            r = await ev("""(function(){var e=document.querySelectorAll(%r)[%d]; if(!e) return null; var b=e.getBoundingClientRect();
+              if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({block:'center'}); b=e.getBoundingClientRect(); }
+              var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y); return {x:x,y:y,hit:!!t&&(e===t||e.contains(t))};})()""" % (sel, idx))
+            if not r: ok('탭 대상 있음 ' + sel, False); return None
+            if not r['hit']: ok('탭 가려지지 않음 ' + sel, False)
+            await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(wait * SLOW)   # 느린 시험 기계: UIA_SLOW=2 python3 tools/gachaflow.py
+            return r
+        def vis(id): return "(function(){var e=document.getElementById('%s'); return !!e && !e.classList.contains('hide') && getComputedStyle(e).display!=='none';})()" % id
+        async def to_map():
+            if await ev(vis('sTitle')): await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1100)
+        async def S(): return await ev("JSON.parse(JSON.stringify(__td.SAVE()))")
+
+        # 0. 옛 기록 옮기기: v1.2 기록(5번째 지역까지 깸, towers 항목 없음)
+        await pg.goto(url); await pg.wait_for_timeout(600)
+        old = {'v': 4, 'prog': 5, 'rec': {'m1': {'easy': 0, 'normal': 3, 'hard': 0, 'endless': 0, 'flag': 0}, 'm2': {'easy': 0, 'normal': 2, 'hard': 0, 'endless': 0, 'flag': 0}, 'm5': {'easy': 1, 'normal': 0, 'hard': 0, 'endless': 0, 'flag': 0}},
+               'res': {}, 'seen': {}, 'story': {}, 'tut': {'done': 1}, 'set': {'sfx': True, 'music': True, 'vib': True, 'shake': True, 'dmgNum': True, 'autoWave': False}, 'mid': None, 'plays': 3, 'gems': 55}
+        await ev("localStorage.clear(); localStorage.setItem('lastarrow.v4', %r)" % json.dumps(old))
+        await pg.reload(); await pg.wait_for_timeout(1200)
+        s = await S()
+        # v2.0: 옛 저장(lastarrow.v4)에서 새 저장(ironhold.v1)으로 보석, 소환권, 가진 탑과 별, 스킨, 설정만 옮기고 판 기록은 새로
+        ok('옛 기록: 그 진행에서 열린 탑 7종 + 새 시작 탑(대공포)을 가짐', sorted(s['towers'].keys()) == sorted(['archer', 'catapult', 'arcane', 'frost', 'ballista', 'bell', 'flame', 'flak']), sorted(s['towers'].keys()))
+        ok('옛 기록: 보석은 옮기고 판 기록은 새로, 소환권 0', s['gems'] == 55 and s['prog'] == 0 and s['rec'] == {} and s['tickets'] == 0 and s['v'] == 1, [s['gems'], s['prog'], s['rec']])
+        ok('옛 기록: 새 저장 키에 쓰고 옛 저장은 그대로 둠', await ev("!!localStorage.getItem('ironhold.v1') && !!localStorage.getItem('lastarrow.v4')") and s['tkRew'] == {} and s.get('from') == 'lastarrow.v4', s['tkRew'])
+        old2 = dict(old); old2.update({'towers': {'archer': {'n': 3, 'star': 2}, 'mint': {'n': 1, 'star': 0}}, 'tickets': 4, 'skin': {'tower': 'berry', 'proj': 'base'}, 'owned': {'berry': 1, 'star': 0, 'heart': 0, 'candy': 0}})
+        old2['set'] = dict(old['set']); old2['set']['music'] = False
+        m2 = await ev("__td.fd.migrate(%r)" % json.dumps(old2))
+        ok('옮기기: 가진 탑과 별, 소환권, 스킨, 설정', m2['towers']['archer'] == {'n': 3, 'star': 2} and 'mint' in m2['towers'] and 'flak' in m2['towers'] and 'catapult' in m2['towers'] and m2['tickets'] == 4 and m2['skin']['tower'] == 'berry' and m2['owned']['berry'] == 1 and m2['set']['music'] == False and m2['rec'] == {} and m2['res'] == {}, m2)
+        await pg.reload(); await pg.wait_for_timeout(900)
+        ok('옮긴 기록은 새로 고침해도 그대로', sorted((await S())['towers'].keys()) == sorted(s['towers'].keys()))
+        # 1. 새 기록
+        await ev("localStorage.removeItem('lastarrow.v4'); localStorage.removeItem('ironhold.v1')"); await pg.reload(); await pg.wait_for_timeout(1200)
+        s = await S()
+        ok('새 기록: 궁수, 투석, 대공포를 가지고 출전 편성에 들어감', sorted(s['towers'].keys()) == ['archer', 'catapult', 'flak'] and await ev("JSON.stringify(__td.fd.opts(0).towers)") == '["archer","catapult","flak"]' and s['tickets'] == 0 and s['gacha']['pity'] == 0, s['towers'])
+        await to_map()
+        ok('지도 아래 소환 단추와 무료 소환 빨간 점', await ev(vis('bGacha')) and not await ev("document.getElementById('gachaDot').classList.contains('hide')"))
+        n_tiles = await ev("document.querySelectorAll('.mbot .btn').length")
+        over = await ev("(function(){var o=0; document.querySelectorAll('.mbot .btn').forEach(function(b){var r=b.getBoundingClientRect(); if(r.right>innerWidth+0.5||r.left<-0.5||b.scrollWidth>b.clientWidth+1) o++;}); return o;})()")
+        ok('지도 아래 단추 6개가 넘치지 않음', n_tiles == 6 and over == 0, [n_tiles, over])
+        # 2. 무료 소환 (손가락 탭)
+        await tap_el('#bGacha', 600)
+        ok('소환 화면이 열림 (확률 단추, 현금 불가 문구)', await ev("__td.st().kind") == 'gacha' and await ev("!!document.getElementById('gcProb')") and '현금으로 살 수 없습니다' in await ev("document.getElementById('modal').textContent"))
+        ok('첫 단추가 무료 소환', '무료 소환' in await ev("document.getElementById('gc1').textContent"))
+        await tap_el('#gcProb', 500)
+        txt = await ev("document.getElementById('modal').textContent")
+        per = [await ev("(function(){var t=__gc.tiers()[%d]; var v=Math.round(t.p/t.keys.length*10)/10; return (v%%1 ? v.toFixed(1) : String(v)) + '%%';})()" % i) for i in range(3)]
+        ok('확률 보기: 등급 60, 30, 10과 탑마다 확률(24종), 천장 규칙', all(t in txt for t in ['60%', '30%', '10%'] + per + ['9번 연속', '10번째', '보석 10개', '현금으로 살 수 없습니다']) and await ev("document.querySelectorAll('.gpK span').length") == 24, [per, txt[:60]])
+        await tap_el('#gpBack', 500)
+        await tap_el('#gc1', 300)
+        ok('무료 소환 → 결과 창, 연출 중', await ev("__td.st().kind") == 'gres' and await ev("!document.getElementById('grSkip').classList.contains('hide')"))
+        await pg.wait_for_timeout(1500)
+        s = await S()
+        ok('무료 소환 기록: 오늘 날짜, 1회, 결과 확인 단추', s['gacha']['free'] == await ev("__meta.today()") and s['gacha']['total'] == 1 and await ev("!document.getElementById('grOk').classList.contains('hide')"), s['gacha'])
+        await tap_el('#grOk', 500)
+        ok('무료 소환은 하루 1번 (단추가 1회 소환으로 바뀜)', not await ev("__gc.freeLeft()") and '1회 소환' in await ev("document.getElementById('gc1').textContent"))
+        t0 = (await S())['gacha']['total']
+        await tap_el('#gc1', 400)
+        ok('보석, 소환권 없으면 소환 안 됨과 알림', (await S())['gacha']['total'] == t0 and '모자랍니다' in await ev("document.getElementById('toast').textContent"))
+        await tap_el('#gcClose', 500)
+        ok('무료를 쓰면 빨간 점 꺼짐', await ev("document.getElementById('gachaDot').classList.contains('hide')"))
+        # 날짜가 바뀌면 다시 무료
+        await ev("localStorage.setItem('__dayShift','1')")
+        ok('다음 날 무료 소환 다시', await ev("__gc.freeLeft()"))
+        await ev("localStorage.setItem('__dayShift','0')")
+        # 3. 소환권, 보석 30, 보석 270
+        await ev("var s=__td.SAVE(); s.tickets=2; s.gems=0;")
+        await tap_el('#bGacha', 600); await tap_el('#gc1', 300); await tap_el('#grSkip', 400)
+        s = await S()
+        ok('소환권 1장으로 1회 (소환권 2 → 1)', s['tickets'] == 1 and s['gacha']['total'] == t0 + 1, [s['tickets'], s['gacha']])
+        await tap_el('#grOk', 400)
+        await ev("var s=__td.SAVE(); s.tickets=0; __meta.gems(30);")
+        await tap_el('#gcClose', 300); await tap_el('#bGacha', 600)
+        ok('소환권이 없으면 보석 30 표시', '30' in await ev("document.getElementById('gc1').textContent"))
+        await tap_el('#gc1', 300); await tap_el('#grSkip', 400)
+        s = await S(); r1 = await ev("JSON.stringify(__td.SAVE().gems)")
+        ok('보석 30으로 1회 (중복 보석 전환이 없으면 0)', s['gems'] in (0, 10) and s['gacha']['total'] == t0 + 2, s['gems'])
+        await tap_el('#grOk', 400)
+        await ev("__meta.gems(269)"); await tap_el('#gcClose', 300); await tap_el('#bGacha', 600)
+        await tap_el('#gc10', 300)
+        ok('보석 269면 10회 안 됨', (await S())['gacha']['total'] == t0 + 2 and await ev("__td.st().kind") == 'gacha')
+        await ev("__meta.gems(270)"); await tap_el('#gcClose', 300); await tap_el('#bGacha', 600)
+        await tap_el('#gc10', 300)
+        ok('10회 결과: 캡슐 10개, 하나씩 열림', await ev("document.querySelectorAll('.gcC').length") == 10 and await ev("document.querySelectorAll('.gcC.open').length") < 10)
+        await pg.screenshot(path=OUT + 'gf_res10_mid.png')
+        await tap_el('#grSkip', 600)
+        s = await S()
+        dupg = await ev("Array.prototype.reduce.call(document.querySelectorAll('.gGem'), function(a){return a+10;}, 0)")
+        ok('보석 270으로 10회 (모두 열기 → 전부 열림, 보석 = 중복 전환분)', s['gacha']['total'] == t0 + 12 and await ev("document.querySelectorAll('.gcC.open').length") == 10 and s['gems'] == dupg, [s['gems'], dupg])
+        ok('요약 줄', len(await ev("document.getElementById('gcSum').textContent")) > 0, await ev("document.getElementById('gcSum').textContent"))
+        await pg.screenshot(path=OUT + 'gf_res10.png')
+        await tap_el('#grOk', 400); await tap_el('#gcClose', 400)
+        # 4. 확률 대량 시뮬 (뽑기 함수 20만 번), 천장 포함 실제 소환 2만 번
+        sim = await ev("""(function(){var c={}, n=200000; for (var i=0;i<n;i++){ var k=__gc.roll(); c[k]=(c[k]||0)+1; } var o={}; for (var k in c) o[k]=c[k]/n*100; return o;})()""")
+        exp = {k: await ev("__gc.rate(%r)" % k) for k in sim}
+        worst = max(abs(sim[k] - exp[k]) for k in exp)
+        tiers = {'c': 0, 'r': 0, 'l': 0}
+        for k, v in sim.items(): tiers[await ev("__gc.tiers().filter(function(t){return t.keys.indexOf(%r)>=0;})[0].id" % k)] += v
+        ok('등급 확률 시뮬 (20만 번): 일반 60, 희귀 30, 전설 10 (오차 0.5 이내)', abs(tiers['c'] - 60) < 0.5 and abs(tiers['r'] - 30) < 0.5 and abs(tiers['l'] - 10) < 0.5, {k: round(v, 2) for k, v in tiers.items()})
+        ok('탑마다 확률 (24종: 일반 7종 60/7, 희귀 10종 3, 전설 7종 10/7, 오차 0.3 이내)', worst < 0.3 and len(sim) == 24 and await ev("__gc.tiers().map(function(t){return t.keys.length;}).join(',')") == '7,10,7', {k: round(v, 2) for k, v in sim.items()})
+        pit = await ev("""(function(){var keep=JSON.stringify(__td.SAVE()), S=__td.SAVE(), worst=0, pulls=[], forced=0;
+          for (var a=0;a<600;a++){ S.towers={archer:{n:1,star:0},catapult:{n:1,star:0}}; S.gacha.pity=0; S.gems=1e9; var run=0, n=0;
+            while (__gc.missing().length && n<500){ var r=__gc.pull(1,'gem')[0]; n++; if (r.pity) forced++; if (r.isNew) run=0; else { run++; if (run>worst) worst=run; } } pulls.push(n); }
+          var s=0; pulls.forEach(function(x){s+=x;}); var mx=Math.max.apply(null,pulls);
+          var t=JSON.parse(keep); for (var k in S) delete S[k]; for (var k2 in t) S[k2]=t[k2]; return {worst:worst, avg:s/pulls.length, max:mx, forced:forced};})()""")
+        ok('천장: 새 탑 없이 연속은 최대 9번 (계정 600개 시뮬, 탑 24종이라 계정마다 평균 90회쯤 뽑음)', pit['worst'] <= 9 and pit['forced'] > 0, pit)
+        print('   다 모으는 데 평균 %.1f회, 최대 %d회 (보석 %d개 상당)' % (pit['avg'], pit['max'], pit['avg'] * 30))
+        # 5. 천장 확정, 중복 별, 별 5 뒤 보석
+        await ev("var S=__td.SAVE(); S.towers={}; __gc.tiers().forEach(function(t){t.keys.forEach(function(k){ if (k!=='mint') S.towers[k]={n:1,star:0}; });}); S.gacha.pity=9; __meta.gems(30);")
+        r = await ev("__gc.pull(1,'gem',0)")
+        ok('천장: 9번 뒤 10번째는 없는 탑(조폐소) 확정, 천장 다시 0', r[0]['k'] == 'mint' and r[0]['isNew'] and r[0]['pity'] and (await S())['gacha']['pity'] == 0, r)
+        await ev("var S=__td.SAVE(); S.towers.archer={n:5,star:4}; __meta.gems(60);")
+        r = await ev("__gc.pull(1,'gem',0)")
+        ok('중복: 별 4 → 5', r[0]['k'] == 'archer' and r[0]['s0'] == 4 and r[0]['s1'] == 5 and r[0]['gem'] == 0 and (await S())['towers']['archer']['star'] == 5, r)
+        g0 = await ev("__meta.gems()")
+        r = await ev("__gc.pull(1,'gem',0)")
+        ok('별 5 뒤 중복은 보석 10으로 (30 쓰고 10 받음)', r[0]['gem'] == 10 and await ev("__meta.gems()") == g0 - 30 + 10 and (await S())['towers']['archer']['star'] == 5, [g0, await ev("__meta.gems()")])
+        ok('모두 가지면 천장 표시 없음', await ev("__gc.pityLeft()") == 0)
+        ok('전투로 넘기는 별 (opts.towerStar)', await ev("JSON.stringify(__gc.starMap())") == '{"archer":5}', await ev("JSON.stringify(__gc.starMap())"))
+        # 6. 새로 고침 유지
+        before = await ev("JSON.stringify({t:__td.SAVE().towers, k:__td.SAVE().tickets, g:__td.SAVE().gacha, m:__td.SAVE().gems})")
+        await pg.reload(); await pg.wait_for_timeout(1200)
+        after = await ev("JSON.stringify({t:__td.SAVE().towers, k:__td.SAVE().tickets, g:__td.SAVE().gacha, m:__td.SAVE().gems})")
+        ok('새로 고침 뒤 가진 탑, 별, 소환권, 천장, 보석 유지', before == after)
+        await to_map()
+        # 7. 전투 탑 = 가진 탑, 처음 승리 소환권
+        await ev("var S=__td.SAVE(); S.towers={archer:{n:1,star:2},catapult:{n:1,star:0},frost:{n:1,star:0}}; S.tickets=0; S.tkRew={}; S.tut.done=1;")
+        await ev("__td.start(0,'normal')"); await pg.wait_for_timeout(1300)
+        ok('전투에서 쓸 탑 = 가진 탑', await ev("JSON.stringify(__td.G().towersOk)") == '["archer","catapult","frost"]', await ev("JSON.stringify(__td.G().towersOk)"))
+        # 8. 시작 능력 카드 (가짜 pick 사건)
+        await ev("__gc.fakePick(true)"); await pg.wait_for_timeout(600)
+        ok('시작 능력 카드 창 (리본 제목, 카드 3장, 전투 멈춤)', await ev("__td.st().kind") == 'pick' and '시작 능력' in await ev("document.querySelector('.pkRib').textContent") and await ev("document.querySelectorAll('.pkc').length") == 3 and await ev("__td.st().paused"))
+        await pg.screenshot(path=OUT + 'gf_pick_start.png')
+        t1 = await ev("__td.G().t"); await pg.wait_for_timeout(600)
+        ok('카드 창이 떠 있는 동안 전투 시간 멈춤', await ev("__td.G().t") == t1)
+        r = await ev("window.__appBack()")
+        ok('안드로이드 뒤로 가기: 카드 창은 안 닫히고 앱은 ok', r == 'ok' and await ev("__td.st().kind") == 'pick' and '골라 주세요' in await ev("document.getElementById('toast').textContent"))
+        await ev("__td.G().ev.push({t:'newEnemy', k:'wolf'}); __td.SAVE().seen.wolf=0;")
+        await pg.wait_for_timeout(300)
+        ok('카드 창 중 새 적 카드는 뒤로 미룸', await ev("__td.st().kind") == 'pick')
+        await tap_el('.pkc', 900, 1)
+        ok('카드 고르면 창 닫힘, pickWait 풀림, 빌드 기록', await ev("__td.st().kind") != 'pick' and not await ev("!!__td.G().pickWait") and await ev("JSON.stringify(__td.G().build.archer)") == '{"fire_archer":1}' and await ev("__td.G().attr.archer") == 'fire', await ev("JSON.stringify([__td.G().build, __td.G().attr, __td.st().kind])"))
+        ok('미뤄 둔 새 적 카드가 이어서 뜸', await ev("__td.st().kind") == 'card')
+        await tap_el('#bOk', 400)
+        await ev("document.getElementById('bWave').click()"); await pg.wait_for_timeout(600)
+        for _ in range(4):
+            if await ev("__td.st().kind === 'card'"): await tap_el('#bOk', 400)
+        await pg.wait_for_timeout(800)
+        ok('고른 뒤 전투 재개 (시간 흐름)', await ev("__td.G().t") > t1 + 0.5 and not await ev("__td.st().paused"))
+        # 9. 조합 배지, 조합 연출
+        await ev("__gc.fakePick(false, true)"); await pg.wait_for_timeout(600)
+        ok('조합 카드에 조합! 배지, 제목은 능력을 고르세요', await ev("!!document.querySelector('.pkc .pkCombo')") and await ev("document.querySelector('.pkRib').textContent") == '능력을 고르세요')
+        await tap_el('.pkc', 900, 0)
+        await ev("__gc.fakeCombo()"); await pg.wait_for_timeout(250)
+        ok('조합 발동 연출이 뜨고 전투는 안 멈춤', await ev("!!document.querySelector('.comboFx')") and not await ev("__td.st().modal"))
+        await pg.wait_for_timeout(1500)
+        ok('조합 연출은 1.5초 뒤 사라짐', not await ev("!!document.querySelector('.comboFx')"))
+        # 10. 빌드 보기: 탑 쟁반 길게 누르기
+        cells = await ev("""(function(){var g=__td.G(); for (var r=2;r<12;r++) for (var c=0;c<8;c++){ var i=r*8+c; if (g.kind[i]==='g' && g.obsAt[i]<0 && g.towerAt[i]<0) return [c,r]; } return null;})()""")
+        xy = await ev("(function(){var v=__td.view(); return [(v.ox + (%d + 0.5) * v.S) / v.dpr, (v.oy + (%d + 0.5) * v.S) / v.dpr];})()" % (cells[0], cells[1]))
+        await pg.touchscreen.tap(xy[0], xy[1]); await pg.wait_for_timeout(500)
+        ok('쟁반 탑 칸에 속성 표시(불)와 별 표시', await ev("!!document.querySelector('.tc[data-k=\"archer\"] .tEl') && !!document.querySelector('.tc[data-k=\"archer\"] .tSt')"))
+        await tap_el('.tc[data-k="archer"]', 400); await tap_el('.tgo', 600)
+        ok('카드 한 번 + 건설 단추 → 탑이 지어지고 빌드 보기는 안 뜸', await ev("__td.G().towers.length") == 1 and not await ev("__td.st().modal"))
+        await ev("__uib.close()"); await pg.wait_for_timeout(500)
+        xy = await ev("(function(){var v=__td.view(); return [(v.ox + (%d + 0.5) * v.S) / v.dpr, (v.oy + (%d + 0.5) * v.S) / v.dpr];})()" % (cells[0], cells[1]))
+        await pg.touchscreen.tap(xy[0], xy[1]); await pg.wait_for_timeout(500)
+        await tap_el('[data-a="bview"]', 500)
+        ok('지은 탑 쟁반의 능력 단추 → 빌드 보기', await ev("__td.st().kind") == 'build')
+        txt = await ev("document.getElementById('modal').textContent")
+        ok('빌드 보기: 속성, 카드 이름과 단계', '불' in txt and '불 화살' in txt and '관통 화살' in txt, txt[:90])
+        await pg.screenshot(path=OUT + 'gf_build.png')
+        r = await ev("window.__appBack()")
+        ok('뒤로 가기로 빌드 보기 닫힘', r == 'ok' and not await ev("__td.st().modal"))
+        await ev("__gc.build('archer')"); await pg.wait_for_timeout(300)
+        await tap_el('.bvT[data-k="catapult"]', 400)
+        ok('빌드 보기 안에서 탑 바꾸기 (투석기: 아직 없음 문구)', await ev("!!document.querySelector('.bvT.on[data-k=\"catapult\"]')") and '아직' in await ev("document.getElementById('modal').textContent"))
+        await tap_el('#bvClose', 400)
+        # 11. 승리 → 소환권 (처음 승리 +2, 별 3개 +1, v2.0: 그 판의 확정 보상이 소환권이면 더함), 두 번째는 없음
+        async def wait_res():   # 결과 창은 승리 연출 뒤에 뜬다. 시험 기계가 느릴 때를 대비해 20초까지 기다림
+            for i in range(80):
+                if await ev("__td.st().kind==='result'"): break
+                await pg.wait_for_timeout(250)
+            await pg.wait_for_timeout(600)
+        rwt = await ev("(__td.MAPS[0].reward && __td.MAPS[0].reward.tickets) || 0")
+        await ev("var g=__td.G(); g.lives=g.maxLives; g.over=1; g.ev.push({t:'win'});"); await wait_res()
+        s = await S()
+        ok('처음 승리 소환권 +2, 별 3개 +1 (+ 확정 보상 소환권) → 결과 창 문구', s['tickets'] == 3 + rwt and ('소환권 +%d' % (3 + rwt)) in await ev("document.getElementById('modal').textContent"), [s['tickets'], rwt, s['tkRew']])
+        await tap_el('#rRetry', 1200)
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});"); await wait_res()
+        ok('같은 지역을 다시 이겨도 소환권도 확정 보상도 없음', (await S())['tickets'] == 3 + rwt and '소환권' not in await ev("document.getElementById('modal').textContent"))
+        await tap_el('#rMap', 1200)
+        # 12. 오늘 임무 3개를 모두 받으면 소환권 +1
+        await ev("var s=__td.SAVE(); s.daily={day:__meta.today(), ids:['kill','clear','win'], n:{kill:100,clear:3,win:1}, got:{}, tk:0};")
+        await tap_el('#bQuest', 600)
+        for i in range(3): await tap_el('.qGet', 450)
+        ok('오늘 임무 3개 모두 받으면 소환권 +1 (보석 +10씩은 그대로)', (await S())['tickets'] == 4 + rwt and (await S())['daily']['tk'] == 1 and '받음' in await ev("document.querySelector('.qBonus').textContent"))
+        await tap_el('#qClose', 500)
+        # 13. 판 창: 필요한 탑 칩, 확정 보상, 편성 8칸. 없는 탑이 있어도 출전은 막지 않음 (v2.0)
+        await ev("__td.MAPS[1].need=['archer','bell']; __td.MAPS[1].reward={tower:'frost'}; delete __td.SAVE().towers.bell; delete __td.SAVE().towers.frost; __td.SAVE().rec[__td.MAPS[0].id]={easy:0,normal:1,hard:0,endless:0,flag:0};")
+        await ev("__meta.stage(1)"); await pg.wait_for_timeout(600)
+        ok('필요한 탑 칩: 가진 탑 진하게, 없는 탑 흐리게, 안내 문구', await ev("document.querySelectorAll('.needRow .nd').length") == 2 and await ev("document.querySelectorAll('.needRow .nd.off').length") == 1 and await ev("!!document.querySelector('.stWarn')"))
+        ok('확정 보상 칩과 편성 8칸', await ev("!!document.querySelector('.stRw') && !document.querySelector('.stRw.got')") and await ev("document.querySelectorAll('#stLo .loS').length") == 8 and await ev("__lo.get(1).indexOf('archer')") == 0)
+        await tap_el('#bGo', 300)
+        ok('없는 탑이 있어도 출전은 막지 않음', not await ev("__td.st().modal") or await ev(vis('story')))
+        await pg.wait_for_timeout(1200)
+        if await ev(vis('story')): await tap_el('#stSkip', 1300)
+        ok('출전 → 전투', await ev("!!__td.G() && __td.G().mi===1"))
+        async def pick_clear():   # 시작 능력 카드 창이 뜨면 하나 골라 닫음(창이 떠 있으면 전투가 멈춰 결과 창이 안 뜸)
+            for i in range(12):
+                k = await ev("__td.st().kind")
+                if k == 'pick': await tap_el('.pkc', 900)
+                elif k == 'card': await tap_el('#bOk', 500)
+                elif i >= 3: break
+                else: await pg.wait_for_timeout(300)
+        await pick_clear()
+        # 13-1. 첫 승리 확정 보상: 탑 획득(결과 창 보상 줄 + 획득 연출), 다시 이겨도 한 번만
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});")
+        await wait_res(); await pg.wait_for_timeout(1500)
+        ok('첫 승리 보상: 서리탑을 얻고 결과 창에 보상 줄', 'frost' in (await S())['towers'] and (await S())['rwGot'].get('c1s02') == 1 and await ev("!!document.getElementById('rRew')"), (await S()).get('rwGot'))
+        ok('탑 획득 연출 창', await ev("!!document.getElementById('rwLayer')"))
+        await pg.screenshot(path=OUT + 'gf_reward.png')
+        await tap_el('#rwOk', 400)
+        ok('연출 닫기', not await ev("!!document.getElementById('rwLayer')"))
+        st0 = ((await S())['towers'].get('frost') or {}).get('star', -1)
+        await tap_el('#rRetry', 1300); await pick_clear()
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});")
+        await wait_res(); await pg.wait_for_timeout(900)
+        ok('다시 이겨도 확정 보상은 한 번만', ((await S())['towers'].get('frost') or {}).get('star') == st0 and not await ev("!!document.getElementById('rwLayer')") and not await ev("!!document.getElementById('rRew')"))
+        # 이미 가진 탑이 보상이면 별 +1
+        await ev("__td.MAPS[2].reward={tower:'archer'}; var s=__td.SAVE(); s.towers.archer={n:1,star:1}; __meta.close(); __td.start(2,'normal');"); await pg.wait_for_timeout(1300); await pick_clear()
+        await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});")
+        await wait_res(); await pg.wait_for_timeout(900)
+        ok('가진 탑이 보상이면 별 +1', (await S())['towers']['archer']['star'] == 2, (await S())['towers']['archer'])
+        if await ev("!!document.getElementById('rwLayer')"): await tap_el('#rwOk', 400)
+        await ev("__meta.close(); document.getElementById('sModal').classList.add('hide');")
+        # 14. 챕터 잠금과 별 관문 (시험용 판 48개 흉내, v2.0)
+        await pg.reload(); await pg.wait_for_timeout(1000)
+        await ev("__ch.fake(12); __td.SAVE().rec={}; __td.MAPS.slice(0, 11).forEach(function (M) { __td.SAVE().rec[M.id] = { easy: 0, normal: 1, hard: 0, endless: 0, flag: 0 }; });")
+        await to_map()
+        ok('챕터 카드 4장, 1장만 열림', await ev("document.querySelectorAll('.chCard').length") in (4, 5) and await ev("document.querySelectorAll('.chCard.locked').length") == 3 and await ev("!document.querySelector('.chCard').classList.contains('locked')"))
+        await tap_el('.chCard', 900)
+        nn = await ev("document.querySelectorAll('#nodes .node').length")
+        ok('1장 지도: 판 노드 12개, 보너스 칸 3개', nn == 12 and await ev("document.querySelectorAll('#nodes .bnode').length") == 3, nn)
+        gate = await ev("(function(){var n=document.querySelectorAll('#nodes .node'); return [n[7].classList.contains('locked'), n[8].classList.contains('locked'), !!n[8].querySelector('.ngate'), n[8].querySelector('.ngate') ? n[8].querySelector('.ngate').textContent : ''];})()")
+        ok('별 관문: 별 11개로는 9판이 잠김(관문 딱지에 필요한 별)', gate[0] == False and gate[1] == True and gate[2] == True and gate[3] == '18', gate)
+        pos = await ev("(function(){var n=document.querySelectorAll('#nodes .node'); return [0,3,6,9].map(function(i){return Math.round(parseFloat(n[i].style.top));});})()")
+        ok('노드는 아래(1판)에서 위(12판)로', pos[0] > pos[1] > pos[2] > pos[3] > 0, pos)
+        ok('지도는 스크롤 없이 한 화면', await ev("(function(){var w=document.getElementById('mapWrap'); return w.scrollHeight <= w.clientHeight + 1;})()"))
+        await ev("__td.MAPS.slice(0, 11).forEach(function (M) { __td.SAVE().rec[M.id].normal = 3; }); __ch.map(1);"); await pg.wait_for_timeout(400)
+        ok('별을 모으면 관문이 열림, 12판 차례', await ev("(function(){var n=document.querySelectorAll('#nodes .node'); return !n[8].classList.contains('locked') && !n[11].classList.contains('locked') && n[11].classList.contains('cur');})()"))
+        await tap_el('#mBack', 700)
+        ok('1장 마지막 판을 이기기 전에는 2장 잠김', await ev("document.querySelectorAll('.chCard')[1].classList.contains('locked')"))
+        await ev("__td.SAVE().rec[__td.MAPS[11].id]={easy:0,normal:1,hard:0,endless:0,flag:0}; __ch.sel();"); await pg.wait_for_timeout(400)
+        ok('1장을 끝내고 별이 차면 2장 열림', not await ev("document.querySelectorAll('.chCard')[1].classList.contains('locked')") and await ev("document.querySelectorAll('.chCard')[2].classList.contains('locked')"))
+        await tap_el('.chCard', 900, 1)
+        ok('2장 지도: 챕터 색이 바뀜', await ev("document.body.getAttribute('data-ch')") == '2' and await ev("__ch.st().ch") == 2)
+        await pg.screenshot(path=OUT + 'gf_map2.png')
+        await tap_el('#nodes .node', 800)
+        ok('2장 1판 판 창', await ev("__td.st().kind") == 'stage' and '2-1' in await ev("document.querySelector('.mnum').textContent"))
+        await tap_el('#bClose', 400)
+        # 15. 진행 기록 지우기: 가진 탑, 소환권, 소환 기록은 남음
+        keep = await ev("JSON.stringify({t:__td.SAVE().towers, k:__td.SAVE().tickets, g:__td.SAVE().gacha, r:__td.SAVE().tkRew})")
+        await tap_el('#bSet', 600); await tap_el('#sReset', 300); await tap_el('#sReset', 1200)
+        ok('진행 기록 지우기 뒤 가진 탑, 소환권, 소환 기록 유지', await ev("__td.SAVE().prog") == 0 and await ev("JSON.stringify({t:__td.SAVE().towers, k:__td.SAVE().tickets, g:__td.SAVE().gacha, r:__td.SAVE().tkRew})") == keep)
+        print('콘솔 오류:', errs[:10])
+        ok('콘솔 오류 0', not errs, errs[:3])
+        bad = [n for n, c in RES if not c]
+        print('결과: %d/%d 통과' % (len(RES) - len(bad), len(RES)), '실패:', bad)
+        await b.close()
+asyncio.run(main())

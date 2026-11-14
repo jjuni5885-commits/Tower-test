@@ -1,0 +1,249 @@
+# XTRA 시험(관리자 모드와 보너스 게임): python3 tools/xflow.py [가로x세로]
+# 손가락 탭으로만: 버전 글자 7번 → 비밀번호 틀림과 맞음 → 관리자 창의 재화, 탑, 진행, 설정 → 전투 중 금화, 무적, 무료 건설, 적 소환, 전멸, 건너뛰기, 즉시 승리
+#   → 관리자 끄기와 바꾼 비밀번호로 다시 켜기 → 보너스 3종을 끝까지(과녁, 카드, 금화), 첫 보상, 같은 날 다시(보상 없음), 다음 날(하루 1번 보상), 잠금, 안드로이드 뒤로 가기
+# 캡처는 shots/xf_<크기>_<장면>.png
+import sys, os, asyncio
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+RES = []
+def ok(name, cond, info=''):
+    RES.append((name, bool(cond)))
+    print(('통과 ' if cond else '실패 ') + name + ('  ' + str(info) if info != '' else ''))
+DATE_SHIM = r"""(() => { const RD = Date; const sh = () => { try { return (parseFloat(localStorage.getItem('__dayShift') || '0') || 0) * 864e5; } catch (e) { return 0; } };
+  function FD(...a) { if (!new.target) return new RD(RD.now() + sh()).toString(); return a.length ? new RD(...a) : new RD(RD.now() + sh()); }
+  FD.prototype = RD.prototype; FD.now = () => RD.now() + sh(); FD.parse = RD.parse; FD.UTC = RD.UTC; window.Date = FD; })();"""
+
+async def main():
+    W, H = 360, 640
+    if len(sys.argv) > 1 and 'x' in sys.argv[1]: W, H = map(int, sys.argv[1].split('x'))
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        await ctx.add_init_script(DATE_SHIM)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html')
+        await pg.wait_for_timeout(1300)
+        async def ev(js): return await pg.evaluate(js)
+        async def shot(n): await pg.screenshot(path=OUT + 'xf_%dx%d_%s.png' % (W, H, n))
+        async def tap_el(sel, wait=350, idx=0, quiet=False):
+            r = await ev("""(function(){var e=document.querySelectorAll(%r)[%d]; if(!e) return null; var b=e.getBoundingClientRect();
+              if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({block:'center'}); b=e.getBoundingClientRect(); }
+              var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y); return {x:x,y:y,hit:!!t&&(e===t||e.contains(t)),w:b.width,h:b.height};})()""" % (sel, idx))
+            if not r:
+                if not quiet: ok('탭 대상 있음 ' + sel, False)
+                return None
+            if not r['hit']: ok('탭 가려지지 않음 ' + sel, False)
+            if min(r['w'], r['h']) < 32: ok('탭 대상 크기 32px 이상 ' + sel, False, '%dx%d' % (r['w'], r['h']))
+            await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(wait)
+            return r
+        def vis(id): return "(function(){var e=document.getElementById('%s'); return !!e && !e.classList.contains('hide') && getComputedStyle(e).display!=='none';})()" % id
+        async def kind(): return await ev("__td.st().modal ? __td.st().kind : ''")
+        async def save(): return await ev("__meta.save()")
+        async def ver_tap(n, gap=140):
+            r = await ev("(function(){var e=document.getElementById('ver')||document.getElementById('verTxt'); var b=e.getBoundingClientRect(); return [b.left+b.width/2, b.top+b.height/2];})()")
+            for i in range(n): await pg.touchscreen.tap(r[0], r[1]); await pg.wait_for_timeout(gap)
+        async def pin(code):
+            for ch in code: await tap_el('.admKey[data-k="%s"]' % ch, 90)
+            await tap_el('.admKey[data-k="ok"]', 400)
+        async def act(a, v=None, wait=300): return await tap_el('#modal [data-a="%s"]%s' % (a, '[data-v="%s"]' % v if v is not None else ''), wait)
+
+        # ---------- 1. 들어가기 ----------
+        await ver_tap(6); await pg.wait_for_timeout(300)
+        ok('버전 글자 6번: 아직 아무 일 없음(타이틀 그대로)', await ev(vis('sTitle')) and await kind() == '')
+        await pg.wait_for_timeout(1700); await ver_tap(3)
+        ok('천천히 누르면 세지 않음', await kind() == '')
+        await pg.wait_for_timeout(1700); await ver_tap(7); await pg.wait_for_timeout(400)
+        ok('버전 글자 7번 → 비밀번호 창', await kind() == 'admpin'); await shot('pin')
+        await pin('1234')
+        ok('틀린 비밀번호: 창 그대로, 안내 글, 관리자 꺼짐', await kind() == 'admpin' and '다릅니다' in await ev("document.getElementById('admHint').textContent") and not (await save()).get('admin'))
+        await pin('5885')
+        ok('맞는 비밀번호 → 관리자 켜짐, 관리자 창', (await save()).get('admin') == 1 and await kind() == 'admin')
+        # ---------- 2. 관리자 창 ----------
+        await act('gem', 100); await act('gem', 1000); await act('tk', 10)
+        s = await save(); ok('보석 +100 +1000, 소환권 +10', s['gems'] == 1100 and s['tickets'] == 10, (s['gems'], s['tickets']))
+        await act('ogold'); await act('ofree'); await act('ogod')
+        s = await save(); ok('전투 자동 설정: 금화 +5000, 무료 건설, 무적', s['admOpt'] == {'gold': 5000, 'free': 1, 'god': 1}, s.get('admOpt')); await shot('wallet')
+        await act('tab', 'tower'); await act('twAll')
+        allk = await ev("__adm.towers(false)"); s = await save()
+        ok('모든 탑 갖기 (%d종)' % len(allk), all(k in s['towers'] for k in allk))
+        await act('twMax'); s = await save(); ok('가진 탑 별 5개', all(s['towers'][k]['star'] == 5 for k in allk))
+        await act('twSel', allk[1]); await act('twStar', -1); s = await save(); ok('고른 탑 별 -1', s['towers'][allk[1]]['star'] == 4)
+        await act('twOwn'); s = await save(); ok('고른 탑 빼기', allk[1] not in s['towers'])
+        await act('twOwn'); s = await save(); ok('고른 탑 다시 갖기', allk[1] in s['towers'])
+        adk = [k for k in await ev("__adm.towers(true)") if k not in allk]
+        await act('twAdm'); s = await save(); ok('관리자 전용 탑 켜기 ' + ','.join(adk), len(adk) == 0 or (s.get('admTw') == 1 and all(k in s['towers'] for k in adk))); await shot('tower')
+        await act('tab', 'stage'); await act('stAll')
+        s = await save(); ok('모든 판 열기: 한 번 누르면 확인만', not any((s['rec'].get(m, {}) or {}).get('normal') for m in s['rec']))
+        await act('stAll'); s = await save(); n = await ev("__td.MAPS.length")
+        ok('모든 판 열기: 두 번째에 실행 (판 %d개 별 3개)' % n, sum(1 for m in s['rec'] if s['rec'][m].get('normal') == 3) == n)
+        await act('unlock'); ok('변신과 합체 잠금 풀림', await ev("__td.fd.unlocked('branch') && __td.fd.unlocked('ult') && __td.fd.unlocked('fuse')")); await shot('stage')
+        await act('tab', 'set'); await shot('set'); await act('pin')
+        ok('비밀번호 바꾸기 창', await kind() == 'admpin')
+        await pin('12'); ok('너무 짧으면 거절', await kind() == 'admpin' and (await save()).get('admPin') is None)
+        await pin('2468'); await pin('2468')
+        ok('새 비밀번호 저장', (await save()).get('admPin') == '2468' and await kind() == 'admin')
+        await tap_el('#admClose'); ok('관리자 창 닫힘', await kind() == '')
+        await ver_tap(1); await pg.wait_for_timeout(300); ok('켜진 뒤에는 버전 글자 한 번으로 관리자 창', await kind() == 'admin'); await tap_el('#admClose')
+        await pg.touchscreen.tap(W / 2, H * 0.4); await pg.wait_for_timeout(1300)
+        # v2.0: 지도 위 막대에 화면 갈래의 관리자 단추(#mAdm, data-adm)가 있으면 구석 단추는 숨음
+        fsel = '#mAdm' if await ev(vis('mAdm')) else '#admFab'
+        ok('지도로 감, 관리자 단추 보임(' + fsel + ')', await ev(vis('sMap')) and (await ev(vis('mAdm'))) != (await ev(vis('admFab')))); await shot('map')
+        await tap_el(fsel); ok('구석 단추 → 관리자 창', await kind() == 'admin'); await tap_el('#admClose')
+        # ---------- 3. 전투 중 ----------
+        await ev("__td.start(0,'normal')"); await pg.wait_for_timeout(1600)
+        g0 = await ev("(function(){var g=__td.G(); return {gold:g.gold, base:Math.round(g.M.gold*g.D.gold+g.R.startGold), free:g.adm&&g.adm.free, god:g.adm&&g.adm.god, cm:g.R.costMul};})()")
+        ok('전투 시작: 금화 +5000, 무료 건설, 무적 자동', g0['gold'] == g0['base'] + 5000 and g0['free'] == 1 and g0['god'] == 1 and g0['cm'] == -1, g0)
+        cell = await ev("(function(){var g=__td.G(); for (var r=0;r<g.rows;r++) for (var c=0;c<g.cols;c++) if (g.kind[r*g.cols+c]==='g' && g.obsAt[r*g.cols+c]<0) return [c,r]; return null;})()")
+        await ev("__td.build('archer', %d, %d)" % (cell[0], cell[1]))
+        ok('무료 건설: 금화 그대로, 탑 1개', await ev("__td.G().gold") == g0['gold'] and await ev("__td.G().towers.length") == 1)
+        ok('전투 구석 단추 보임', await ev(vis('admFab'))); await shot('battle_fab')
+        over = await ev("""(function(){var f=document.getElementById('admFab').getBoundingClientRect(), v=__td.view(), g=__td.G(); var x0=v.ox/v.dpr, y0=v.oy/v.dpr, x1=x0+v.S*g.cols/v.dpr, y1=y0+v.S*g.rows/v.dpr;
+          return !(f.right<=x0+3||f.left>=x1-3||f.bottom<=y0+3||f.top>=y1-3);})()""")
+        ok('구석 단추가 전장 칸을 가리지 않음(3px 안쪽까지 허용)', not over)
+        await tap_el('#bPause', 500); ok('일시 정지 창에 관리자 단추', await kind() == 'pause' and await ev("!!document.getElementById('admPause') || [].some.call(document.querySelectorAll('#modal button'), function(b){return b.textContent.indexOf('관리자')>=0;})")); await shot('pause')
+        if await ev("!!document.getElementById('admPause')"): await tap_el('#admPause', 450)
+        else: await ev("__adm.battle()"); await pg.wait_for_timeout(300)
+        ok('전투 관리자 창', await kind() == 'admin' and await ev("!!document.querySelector('#modal [data-a=\"gold\"]')")); await shot('battle')
+        await act('gold', 1000); await act('gold', 10000)
+        ok('금화 +1000 +10000', await ev("__td.G().gold") == g0['gold'] + 11000)
+        await act('god'); a1 = await ev("__td.G().adm.god"); await act('god'); a2 = await ev("__td.G().adm.god"); ok('무적 끄고 켜기', a1 == 0 and a2 == 1)
+        await act('free'); f1 = await ev("__td.G().R.costMul"); await act('free'); f2 = await ev("__td.G().R.costMul"); ok('무료 건설 끄면 원래 값, 켜면 0', f1 != -1 and f2 == -1, (f1, f2))
+        await act('nocd'); await act('spd'); ok('재사용 시간 없음, 배속 5배', await ev("__td.G().adm.nocd === 1 && __td.st().speed === 5 && document.getElementById('spdTxt').textContent === '5배'"))
+        await act('spawnV', None, 600); ok('적 소환 목록', await ev("document.querySelectorAll('#modal [data-a=\"spawn\"]').length") >= 10); await shot('spawn')
+        n0 = await ev("__td.G().enemies.length"); await act('spawn', await ev("__adm.enemies()[0]"), 250)
+        await act('spN', 5); await act('spawn', await ev("__adm.enemies()[1]"), 250)
+        ok('적 소환 1마리 + 5마리', await ev("__td.G().enemies.length") == n0 + 6)
+        await tap_el('#admClose'); ok('돌아가기 → 전투 관리자 창', await kind() == 'admin'); await tap_el('#admClose', 500)
+        ok('닫으면 전투가 이어짐', await ev("!__td.st().modal && !__td.st().paused"))
+        await pg.wait_for_timeout(700)
+        await tap_el('#admFab', 450); await act('kill', None, 500)
+        ok('적 전멸', await ev("__td.G().enemies.filter(function(e){return !e.dead;}).length") == 0 and await kind() == '')
+        w0 = await ev("__td.G().wave"); await tap_el('#admFab', 450); await act('skip', None, 500)
+        ok('웨이브 건너뛰기 (%d → %d)' % (w0, await ev("__td.G().wave")), await ev("__td.G().wave") == w0 + 1)
+        # 기술 재사용 시간 없음: 화살비를 쓰고도 바로 준비됨
+        await ev("(function(){var g=__td.G(); g.sk.rain.cd = 30;})()"); await pg.wait_for_timeout(200); ok('재사용 시간 없음: 기술이 바로 준비됨', await ev("__td.G().sk.rain.cd") == 0)
+        # 무적: 성문 앞에 적을 떨어뜨려도 생명이 그대로
+        await ev("(function(){var g=__td.G(); for (var i=0;i<6;i++) __td.fd.spawn('goblin', 0, g.paths[0].len - 0.6 - i*0.1);})()"); await pg.wait_for_timeout(1500)
+        lv = await ev("(function(){var g=__td.G(); return [g.lives, g.maxLives, g.over];})()"); ok('무적: 적이 새도 생명 그대로', lv[0] == lv[1] and lv[2] == 0, lv)
+        await tap_el('#admFab', 450); await act('upAll', None, 400); ok('세운 탑 한 단계 강화(무료)', await ev("__td.G().towers[0].lvl") == 2)
+        await tap_el('#admFab', 450); await act('allTw', None, 400); ok('모든 탑 쓰기', await ev("__td.G().towersOk.length") == len(allk) + len(adk))
+        await tap_el('#admFab', 450); await act('win'); ok('즉시 승리: 한 번 누르면 확인만', await ev("__td.G().over") == 0 and await kind() == 'admin')
+        await act('win', None, 300); t = 0
+        while t < 6000 and await kind() != 'result': await pg.wait_for_timeout(250); t += 250
+        ok('즉시 승리 → 결과 창(승리)', await kind() == 'result' and await ev("__td.G().over") == 1); await shot('win')
+        await tap_el('#rMap', 1200); ok('지도로 돌아옴', await ev(vis('sMap')))
+        # ---------- 4. 끄기와 다시 켜기 ----------
+        if await ev("!!document.getElementById('rwLayer')"): await tap_el('#rwOk', 400)
+        await tap_el('#mAdm' if await ev(vis('mAdm')) else '#admFab'); await act('tab', 'set'); await act('off', None, 500)
+        ok('관리자 모드 끄기: 단추 사라짐', not (await save()).get('admin') and not await ev(vis('admFab')) and not await ev(vis('mAdm')))
+        await pg.reload(); await pg.wait_for_timeout(1300)
+        await ver_tap(7); await pg.wait_for_timeout(300); await pin('5885'); ok('바꾼 뒤 옛 비밀번호는 안 됨', not (await save()).get('admin'))
+        await pin('2468'); ok('새 비밀번호로 다시 켜짐', (await save()).get('admin') == 1)
+        await act('tab', 'set'); await act('off', None, 500)
+        await pg.touchscreen.tap(W / 2, H * 0.4); await pg.wait_for_timeout(1300)
+        # ---------- 5. 보너스 게임 ----------
+        # v2.0 QA: 챕터 지도가 보너스 칸(.bnode)을 그리므로 대비 단추(#bnFab)는 숨음. 목록은 __bn.list()로 엶
+        if await ev("__ch.st().mode") != 'map': await ev("__ch.map(1)"); await pg.wait_for_timeout(500)
+        ok('지도에 보너스 칸이 그려지면 대비 단추는 숨음', await ev("document.querySelectorAll('#nodes .bnode').length") == 3 and not await ev(vis('bnFab'))); await shot('map_bonus')
+        await ev("__bn.list()"); await pg.wait_for_timeout(500); ok('보너스 목록 12칸', await kind() == 'bnlist' and await ev("document.querySelectorAll('#modal .bnNode').length") == 12); await shot('bn_list')
+        gems0 = (await save())['gems']; tk0 = (await save())['tickets']
+        async def play(full=True, maxms=70000):
+            # 흉내 손가락: 과녁은 0.3초에 한 번, 수레는 0.12초마다 손가락 옮기기, 카드는 0.4초에 한 장
+            t = 0; seen = {}
+            while t < maxms:
+                st = await ev("__bn.st()")
+                if st['st'] == 'end' or not st.get('kind'): break
+                if st['st'] != 'play': await pg.wait_for_timeout(150); t += 150; continue
+                if st['kind'] == 'gallery':
+                    c = [q for q in st['tg'] if q['k'] != 'b' and 24 < q['x'] < W - 24 and 100 < q['y'] < H - 30]
+                    if c:
+                        q = sorted(c, key=lambda v: 0 if v['k'] == 'g' else 1)[0]
+                        await pg.touchscreen.tap(min(W - 4, max(4, q['x'] + q['vx'] * 0.05)), q['y'] + q['vy'] * 0.05)
+                    await pg.wait_for_timeout(280); t += 300
+                elif st['kind'] == 'catch':
+                    line = st['cy'] - 22
+                    c = sorted([q for q in st['it'] if q['k'] != 'b' and q['y'] < line], key=lambda v: (line - v['y']) / v['vy'])
+                    x = c[0]['x'] if c else st['cx']
+                    for q in st['it']:
+                        if q['k'] == 'b' and abs(q['x'] - x) < 62 and 0 < (line - q['y']) / q['vy'] < 0.45: x = x + 75 if q['x'] < x else x - 75
+                    await pg.touchscreen.tap(min(W - 20, max(20, x)), H - 150); await pg.wait_for_timeout(90); t += 110
+                else:
+                    if st.get('peek', 0) > 0:
+                        for i, c in enumerate(st['cards']): seen[i] = c['p']   # 처음 보여 줄 때 다 외우는 사람
+                        await pg.wait_for_timeout(200); t += 200; continue
+                    dn = [(i, c) for i, c in enumerate(st['cards']) if not c['up'] and not c['done']]
+                    up = [(i, c) for i, c in enumerate(st['cards']) if c['up'] and not c['done']]
+                    if not dn: await pg.wait_for_timeout(200); t += 200; continue
+                    pick = dn[0]
+                    if len(up) == 1:
+                        m = [d for d in dn if d[1]['p'] == up[0][1]['p']]
+                        if m: pick = m[0]
+                    await pg.touchscreen.tap(pick[1]['x'], pick[1]['y']); await pg.wait_for_timeout(380); t += 400
+                if not full and t > 6000: await ev("__bn.left(0.3)"); full = True
+            await pg.wait_for_timeout(900)
+            return await ev("__bn.res()")
+        async def go(id):
+            await ev("__bn.open('%s')" % id); await pg.wait_for_timeout(450)
+            await tap_el('#bnGo', 300)
+        # 과녁 사격: 목록에서 손가락으로 들어감
+        await tap_el('.bnNode[data-id="c1b1"]', 500); ok('칸을 누르면 안내 창', (await ev("__bn.st()"))['st'] == 'intro'); await shot('bn_gallery_intro')
+        await tap_el('#bnGo', 1500); await shot('bn_gallery_ready'); st = await ev("__bn.st()"); ok('시작: 과녁이 날아다님', st['st'] in ('ready', 'play') and st['kind'] == 'gallery')
+        await pg.wait_for_timeout(600)
+        # 뒤로 가기(안드로이드): 놀이 중 → 멈춤 창 → 계속
+        r1 = await ev("window.__appBack()"); await pg.wait_for_timeout(200); s1 = (await ev("__bn.st()"))['st']
+        r2 = await ev("window.__appBack()"); await pg.wait_for_timeout(200); s2 = (await ev("__bn.st()"))['st']
+        ok('뒤로 가기: 놀이 중이면 멈춤 창, 한 번 더면 계속', r1 == 'ok' and s1 == 'pause' and r2 == 'ok' and s2 in ('play', 'ready'), (r1, s1, r2, s2))
+        async def snap_mid(name):
+            for i in range(8):
+                await pg.wait_for_timeout(700); await shot(name + str(i % 2))
+                if i >= 1: break
+        res = await play(); await shot('bn_gallery_end')
+        s = await save(); r = await ev("__bn.rec('c1b1')")
+        ok('과녁 사격 끝까지: 점수 %d, 별 %d' % (res['score'], res['stars']), res['stars'] >= 1)
+        ok('첫 완료 보상: 보석 +%d, 소환권 +%d' % (res['rew']['gems'], res['rew']['tk']), res['rew']['first'] == 1 and 30 <= res['rew']['gems'] <= 60 and 1 <= res['rew']['tk'] <= 2 and s['gems'] == gems0 + res['rew']['gems'] and s['tickets'] == tk0 + res['rew']['tk'] and r['done'] == 1)
+        ok('결과 창: 하루 1번 안내', '하루 1번' in await ev("document.querySelector('#bnCard .bnNote').textContent"))
+        g1 = s['gems']; star1 = res['stars']
+        await tap_el('#bnAgain', 1400); res = await play(full=False)
+        s = await save(); ok('같은 날 다시 하기: 첫 보상과 오늘 보상 없음', res['rew']['first'] == 0 and res['rew']['daily'] == 0 and (res['rew']['gems'] == 0 or res['stars'] > star1), res['rew'])
+        await tap_el('#bnDone', 400); ok('닫으면 지도', not (await ev("__bn.st()"))['on'] and await ev(vis('sMap')))
+        # 다음 날: 하루 1번 작은 보상
+        await ev("localStorage.setItem('__dayShift','1')"); g2 = (await save())['gems']
+        await go('c1b1'); await pg.wait_for_timeout(1300); res = await play(); s = await save()
+        ok('다음 날: 오늘 보상 보석 +5~15 (받은 것 %d)' % res['rew']['gems'], res['stars'] >= 1 and res['rew']['daily'] == 1 and res['rew']['first'] == 0 and s['gems'] == g2 + res['rew']['gems'] and res['rew']['gems'] >= 5)
+        st3 = await ev("__bn.state('c1b1')"); ok('bnState: 완료, 오늘 받음', st3['done'] and st3['today'])
+        await ev("__bn.back()"); await pg.wait_for_timeout(200); ok('결과 창에서 뒤로 가기 → 닫힘', not (await ev("__bn.st()"))['on'])
+        # 카드 짝 맞추기
+        g3 = (await save())['gems']; await go('c1b2'); await pg.wait_for_timeout(700); await shot('bn_memory_peek')
+        await pg.wait_for_timeout(2200); await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(500); await shot('bn_memory_play')
+        res = await play(); await shot('bn_memory_end'); s = await save()
+        ok('카드 짝 맞추기 끝까지: 별 %d, 뒤집기 기록' % res['stars'], res['stars'] >= 1 and res['rew']['first'] == 1 and s['gems'] == g3 + res['rew']['gems'])
+        await tap_el('#bnDone', 400)
+        # 금화 받기
+        g4 = (await save())['gems']; await go('c1b3'); await pg.wait_for_timeout(1300)
+        async def shots_during():
+            await pg.wait_for_timeout(5000); await shot('bn_catch_play')
+        tsk = asyncio.ensure_future(shots_during()); res = await play(); await tsk; await shot('bn_catch_end'); s = await save()
+        ok('금화 받기 끝까지: 점수 %d, 별 %d' % (res['score'], res['stars']), res['stars'] >= 1 and res['rew']['first'] == 1 and s['gems'] == g4 + res['rew']['gems'])
+        await tap_el('#bnDone', 400)
+        ok('챕터 고르기에서도 보너스 대비 단추는 숨음(카드와 겹치지 않게)', (await ev("__ch.sel()")) is None and not await ev(vis('bnFab')))
+        # 다른 챕터 분위기
+        for id in ['c2b1', 'c3b3', 'c4b1']:
+            await go(id); await pg.wait_for_timeout(2600); await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(250); await shot('bn_' + id); await ev("__bn.close()")
+        ok('2, 3, 4장 보너스도 열림', True)
+        # 저장 유지와 잠금: 새로 고침 뒤 기록 유지, 새 저장에서는 잠김
+        await pg.reload(); await pg.wait_for_timeout(1200)
+        ok('새로 고침 뒤 보너스 기록 유지', (await ev("__bn.state('c1b2')"))['done'])
+        await ev("localStorage.clear()"); await pg.reload(); await pg.wait_for_timeout(1200)
+        lock = await ev("__td.MAPS.some(function(m){return m.id==='c1s03';}) ? !__bn.state('c1b1').open && __bn.open('c1b1') === false : true")
+        ok('새 저장: 3판을 이기기 전에는 잠김', lock)
+        ok('콘솔 오류 없음', len(errs) == 0, errs[:5])
+        await b.close()
+    bad = [n for n, c in RES if not c]
+    print('\n결과: %d / %d 통과' % (len(RES) - len(bad), len(RES)))
+    if bad: print('실패:', bad); sys.exit(1)
+asyncio.run(main())

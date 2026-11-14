@@ -1,0 +1,29 @@
+# 타격감 확인용 전투 화면: python3 tools/fxshot.py 맵번호 [초 간격] [장수] [속도]
+import sys, asyncio
+from playwright.async_api import async_playwright
+import os
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    mi = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+    gap = float(sys.argv[2]) if len(sys.argv) > 2 else 6
+    n = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    sp = int(sys.argv[4]) if len(sys.argv) > 4 else 2
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+        await pg.mouse.click(195, 420); await pg.wait_for_timeout(500)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1")
+        await pg.evaluate("__td.start(%d, 'normal')" % mi); await pg.wait_for_timeout(1500)
+        await pg.evaluate("var g=__td.G(); g.gold += 600; __td.bot(1); __td.speed(%d)" % sp)
+        for k in range(n):
+            await pg.wait_for_timeout(int(gap * 1000))
+            await pg.screenshot(path=OUT + 'fx%d_%d.png' % (mi, k))
+        st = await pg.evaluate("(function(){var g=__td.G(); return [g.wave, g.lives, g.towers.length, g.enemies.length, Math.round(__td.fps())];})()")
+        print('wave,lives,towers,enemies,fps', st, 'errors', errs[:5])
+        await b.close()
+asyncio.run(main())

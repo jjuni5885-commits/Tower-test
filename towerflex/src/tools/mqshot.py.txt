@@ -1,0 +1,55 @@
+# MA 갈래(2, 3장 지형) 확인: python3 tools/mqshot.py [360x640] [테마,테마|all] [battle|preview|sheet|bench|all] [초]
+# 기존 판의 theme을 실행 중에만 새 키로 바꿔(__td.MAPS) 전투, 판 미리보기, 소품 그림판을 캡처한다(파일은 안 바꿈). 결과: shots/mq_*.png
+import sys, asyncio, json, base64, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+MAPI = {'graveyard': 11, 'manor': 9, 'pumpkin': 3, 'crypt': 16, 'city': 19, 'desert': 6, 'harbor': 14, 'airfield': 17}
+PICK = "(function(){var b=document.querySelector('.pkc'); if (b) b.click();})()"
+async def main():
+    W, H = map(int, (sys.argv[1] if len(sys.argv) > 1 else '360x640').split('x'))
+    ths = sys.argv[2].split(',') if len(sys.argv) > 2 and sys.argv[2] != 'all' else list(MAPI.keys())
+    mode = sys.argv[3] if len(sys.argv) > 3 else 'battle'
+    secs = float(sys.argv[4]) if len(sys.argv) > 4 else 7
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        pg = await b.new_page(viewport={'width': W, 'height': H}, device_scale_factor=2)
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+        await pg.mouse.click(W / 2, H * 0.5); await pg.wait_for_timeout(500)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1")
+        await pg.reload(); await pg.wait_for_timeout(1200); await pg.mouse.click(W / 2, H * 0.5); await pg.wait_for_timeout(700)   # 잠금 풀린 지도로 다시 그림
+        await pg.evaluate("Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1")
+        for th in ths: await pg.evaluate("__td.MAPS[%d].theme = '%s'" % (MAPI[th], th))
+        # 항구 시험: 뱃길(sea)을 실행 중에만 하나 넣어 부두가 그려지는지 봄 (물 칸 가운데 왼쪽이 물인 첫 칸까지)
+        await pg.evaluate("(function(){var M=__td.MAPS[%d]; for (var r=2;r<M.grid.length;r++) for (var c=1;c<M.grid[r].length;c++) if (M.grid[r].charAt(c)==='~' && M.grid[r].charAt(c-1)==='~' && M.grid[r].charAt(c+1)!=='~') { M.sea=[[[-1,r],[c,r]]]; return; } })()" % MAPI['harbor'])
+        if mode in ('sheet', 'all'):
+            for th in ths:
+                for S in (130, 40):
+                    d = await pg.evaluate("__mq.sheet('%s', %d)" % (th, S))
+                    open(OUT + 'mq_sheet_%s_%d.png' % (th, S), 'wb').write(base64.b64decode(d['url'].split(',')[1]))
+                    print('sheet', th, S, 'props', d['n'], 'ms', d['ms'])
+        if mode in ('preview', 'all'):
+            for th in ths:
+                await pg.evaluate("document.querySelectorAll('.node')[%d].click()" % MAPI[th]); await pg.wait_for_timeout(900)
+                await pg.screenshot(path=OUT + 'mq_prev_%s_%d.png' % (th, W))
+                await pg.evaluate("__td.closeModal()"); await pg.wait_for_timeout(250)
+        if mode in ('battle', 'bench', 'all'):
+            for th in ths:
+                mi = MAPI[th]
+                await pg.evaluate("__td.start(%d, 'normal')" % mi); await pg.wait_for_timeout(1300)
+                await pg.evaluate(PICK); await pg.wait_for_timeout(700)
+                if mode != 'bench': await pg.screenshot(path=OUT + 'mq_%s_%d_0.png' % (th, W))
+                await pg.evaluate("var g=__td.G(); g.gold += 900; __td.bot(1); __td.speed(3)")
+                for t in range(int(secs)):
+                    await pg.wait_for_timeout(1000); await pg.evaluate(PICK)
+                await pg.wait_for_timeout(400)
+                if mode != 'bench': await pg.screenshot(path=OUT + 'mq_%s_%d_1.png' % (th, W))
+                st = await pg.evaluate("(function(){var g=__td.G(), v=__td.view(); return {wave:g.wave, towers:g.towers.length, en:g.enemies.length, fps:Math.round(__td.fps()), S:Math.round(v.S), bgNew:__mq.bench(g, v, '%s', 3), bgOld:__mq.bench(g, v, 'meadow', 3), bgOld2:__mq.bench(g, v, 'dark', 3)};})()" % th)
+                print(th, json.dumps(st))
+        print('errors', len(errs)); [print(e) for e in errs[:12]]
+        await b.close()
+asyncio.run(main())

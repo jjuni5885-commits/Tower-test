@@ -1,0 +1,39 @@
+# REN1 실제 전투 확인: python3 tools/rtlive.py [판 번호] [탑 키,탑 키...] [초] [가로x세로]
+# 겹침 빌드(tools/rtbuild.py --eng2: 탑 로직 갈래 포함)에서 탑을 6단계로 깔고 적을 불러 실제 탄과 사건이 오류 없이 그려지는지 보고, 프레임 시간(__td.prof)을 잰다 → shots/rtlive_<판>_<n>.png
+import sys, asyncio, os, json
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    mi = int(args[0]) if args else 4
+    ks = (args[1] if len(args) > 1 else 'flak,sam,gatling,sniper,rocket,laser,tesla,airbase,singijeon,jangseung,barracks,shrine,archer,cannon').split(',')
+    secs = float(args[2]) if len(args) > 2 else 8
+    W, H = map(int, (args[3] if len(args) > 3 else '360x640').split('x'))
+    html = ROOT + '/out/index.html' if '--plain' in sys.argv or not os.path.exists('/tmp/rtov/out/index.html') else '/tmp/rtov/out/index.html'
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + html); await pg.wait_for_timeout(1200)
+        await pg.evaluate("__td.SAVE().tut.done=1; Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1300)
+        info = await pg.evaluate("""(function(ks){ try { __td.closeModal(); } catch (e) {} document.getElementById('story').classList.add('hide'); var g=__td.G(); g.gold=9e6; g.maxLv=6; g.lives=g.maxLives=9999; __rt.hq(); g.pickWait=false;
+          var cells=[], n=0, built=[]; for(var r=1;r<g.rows-1;r++) for(var c=0;c<g.cols;c++) cells.push([c,r]);
+          cells.sort(function(a,b){ return ((a[0]*7+a[1]*13)%11)-((b[0]*7+b[1]*13)%11); });
+          ks.forEach(function(k,i){ for(var q=0;q<cells.length;q++){ var t=__td.build(k,cells[q][0],cells[q][1]); if(t){ cells.splice(q,1); for(var j=0;j<5;j++){ g.gold=9e6; __td.upgrade(t,i%2); } built.push(k+t.lvl); break; } } });
+          var pool=(g.M.pool||['goblin']); for(var e=0;e<26;e++){ var en=__td.fd.spawn(pool[e%pool.length], e%3, 1+e*0.45); if(en){ en.hp=en.mhp=en.mhp*30; } }
+          return {id:g.M.id, built:built, en:g.enemies.length}; })(KS)""".replace('KS', json.dumps(ks)))
+        print(info)
+        for i in range(3):
+            await pg.wait_for_timeout(int(secs * 1000 / 3)); await pg.evaluate("__rt.hq(); var g=__td.G(); g.pickWait=false; try{ __td.closeModal(); }catch(e){}")
+            await pg.screenshot(path=OUT + 'rtlive_%d_%d.png' % (mi, i))
+        st = await pg.evaluate("(function(){ var g=__td.G(), k={}; g.proj.forEach(function(p){ k[p.kind]=(k[p.kind]||0)+1; }); return {rt:__rt.n(), proj:k, units:g.units.length, en:g.enemies.length, err:__td.st().err||0, fps:Math.round(__td.fps())}; })()")
+        print(st)
+        bn = await pg.evaluate("(function(){ var o={}; [220,0,220,0].forEach(function(c,i){ __rt.cap(c); if(c) __rt.bench(20); o[(c?'입자 '+c:'입자 없음')+' #'+(i>>1)]=__rt.bench(40); }); __rt.cap(220); o.n=__rt.n(); return o; })()")
+        print('프레임 시간(ms):', bn)
+        print('콘솔 오류:', errs[:6])
+        await b.close()
+asyncio.run(main())

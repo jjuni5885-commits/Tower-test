@@ -1,0 +1,74 @@
+# 판 미리보기 그림판(STGA): python3 tools/sgsheet.py [챕터 번호 ...]  → shots/sg_sheet_ch<번호>.png
+# 빌드된 게임(out/index.html)에서 판 자료를 읽어 챕터별로 작은 지도 12장을 나란히 그린다(길 순서 화살표, 뱃길 파란 점선, 항로 빨간 점선, 규칙, 보스, 보상).
+# 길 모양이 서로 겹치는지 한눈에 보려는 도구라 지형은 색 칸으로만 그린다(실제 그림은 tools/sgshot.py)
+import sys, asyncio, os, json
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+JS = r"""
+(function (maps, title) {
+  var S = 20, PW = 10 * S, PH = 17 * S, GX = 18, GY = 86, per = 6, rows = Math.ceil(maps.length / per);
+  var W = GX + per * (PW + GX), H = 46 + rows * (PH + GY);
+  document.body.style.margin = '0'; document.body.innerHTML = '';
+  var c = document.createElement('canvas'); c.width = W; c.height = H; document.body.appendChild(c);
+  var x = c.getContext('2d'); x.fillStyle = '#f4efe6'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#1e1b2e'; x.font = 'bold 22px sans-serif'; x.fillText(title, GX, 30);
+  var TH = { meadow: '#7fd066', forest: '#4cb870', swamp: '#6ec6a2', deepforest: '#389a94', canyon: '#f5a87a', snow: '#e4edfa', ruins: '#a2d78c', volcano: '#9c6854', dark: '#584896',
+    graveyard: '#5d6b86', manor: '#4f7a6a', pumpkin: '#a9793f', crypt: '#4a4468', city: '#8a8f99', desert: '#d9b77a', harbor: '#7f9aa8', airfield: '#8f9a86', hanok: '#c9a877', bamboo: '#6aa86a', palace: '#c98a6a', pogu: '#9ab8c0', sansa: '#c8784a' };
+  var PC = ['#ffffff', '#ffe14a', '#ff9ad0'];
+  function arrow(x0, y0, x1, y1, col) { var a = Math.atan2(y1 - y0, x1 - x0); x.fillStyle = col; x.beginPath(); x.moveTo(x1, y1); x.lineTo(x1 - 9 * Math.cos(a - 0.45), y1 - 9 * Math.sin(a - 0.45)); x.lineTo(x1 - 9 * Math.cos(a + 0.45), y1 - 9 * Math.sin(a + 0.45)); x.closePath(); x.fill(); }
+  function line(pts, col, w, dash) { x.save(); x.strokeStyle = col; x.lineWidth = w; x.lineJoin = 'round'; x.setLineDash(dash || []); x.beginPath(); pts.forEach(function (p, i) { if (i) x.lineTo(p[0], p[1]); else x.moveTo(p[0], p[1]); }); x.stroke(); x.restore(); }
+  maps.forEach(function (M, n) {
+    var ox = GX + (n % per) * (PW + GX), oy = 46 + Math.floor(n / per) * (PH + GY);
+    x.save(); x.beginPath(); x.rect(ox, oy, PW, PH); x.clip();
+    x.fillStyle = TH[M.theme] || '#999999'; x.fillRect(ox, oy, PW, PH);
+    for (var r = 0; r < 17; r++) for (var cc = 0; cc < 10; cc++) {
+      var ch = M.grid[r].charAt(cc), X = ox + cc * S, Y = oy + r * S;
+      if (ch === '=') { x.fillStyle = '#f6e3b8'; x.fillRect(X, Y, S, S); }
+      else if (ch === 'G') { x.fillStyle = '#f6e3b8'; x.fillRect(X, Y, S, S); }
+      else if (ch === '~') { x.fillStyle = '#3f9fe0'; x.fillRect(X, Y, S, S); }
+      else if (ch === 'L') { x.fillStyle = '#ff7a3c'; x.fillRect(X, Y, S, S); }
+      else if (ch === '#') { x.fillStyle = '#3c3848'; x.fillRect(X + 1, Y + 1, S - 2, S - 2); }
+      else if (ch !== '.') { var rad = ch === 'a' ? 3.5 : ch === 'b' ? 5 : ch === 'd' ? 5 : 6.5; x.fillStyle = ch === 'd' ? '#ffcc22' : ch === 'C' ? '#6b4a2e' : '#8a6a44'; if (ch === 'C') x.fillRect(X + 1, Y + 1, S - 2, S - 2); else { x.beginPath(); x.arc(X + S / 2, Y + S / 2, rad, 0, 6.283); x.fill(); } }
+      x.strokeStyle = 'rgba(0,0,0,0.07)'; x.lineWidth = 1; x.strokeRect(X + 0.5, Y + 0.5, S, S);
+    }
+    var ctr = function (p) { return [ox + (p[0] + 0.5) * S, oy + (p[1] + 0.5) * S]; };
+    (M.sea || []).forEach(function (w) { var pts = w.map(ctr); line(pts, '#0b2a6a', 3, [5, 4]); arrow(pts[pts.length - 2][0], pts[pts.length - 2][1], pts[pts.length - 1][0], pts[pts.length - 1][1], '#0b2a6a'); });
+    M.paths.forEach(function (w, i) { var pts = w.map(ctr); line(pts, 'rgba(60,40,20,0.85)', 5); line(pts, PC[i % 3], 2.4);
+      for (var k = 1; k < pts.length; k++) { var mx = (pts[k - 1][0] + pts[k][0]) / 2, my = (pts[k - 1][1] + pts[k][1]) / 2; arrow(pts[k - 1][0], pts[k - 1][1], mx + (pts[k][0] - pts[k - 1][0]) * 0.08, my + (pts[k][1] - pts[k - 1][1]) * 0.08, 'rgba(60,40,20,0.95)'); } });
+    (M.air || []).forEach(function (a) { var p0 = ctr([a[0], a[1]]), p1 = ctr([a[2], a[3]]); line([p0, p1], '#e01f3d', 2.5, [7, 5]); arrow(p0[0], p0[1], p1[0], p1[1], '#e01f3d'); });
+    // 시작점과 성문
+    M.paths.forEach(function (w, i) { var p = ctr([Math.max(0, Math.min(9, w[0][0])), Math.max(0, Math.min(16, w[0][1]))]); x.fillStyle = '#7a2bd0'; x.beginPath(); x.arc(p[0], p[1], 7, 0, 6.283); x.fill(); x.fillStyle = '#ffffff'; x.font = 'bold 11px sans-serif'; x.textAlign = 'center'; x.fillText(String(i + 1), p[0], p[1] + 4); x.textAlign = 'left'; });
+    var e = M.paths[0][M.paths[0].length - 1], g = ctr(e); x.fillStyle = '#d5202f'; x.fillRect(g[0] - 8, g[1] - 8, 16, 16); x.fillStyle = '#ffffff'; x.font = 'bold 12px sans-serif'; x.textAlign = 'center'; x.fillText('문', g[0], g[1] + 4); x.textAlign = 'left';
+    x.restore();
+    x.strokeStyle = '#1e1b2e'; x.lineWidth = 2; x.strokeRect(ox, oy, PW, PH);
+    x.fillStyle = '#1e1b2e'; x.font = 'bold 15px sans-serif'; x.fillText(M.id + ' ' + M.name, ox, oy + PH + 19);
+    x.font = '13px sans-serif';
+    x.fillText('[' + M.theme + '] 웨이브 ' + M.waves + (M.boss ? ', 보스 ' + M.boss : ''), ox, oy + PH + 37);
+    x.fillText('규칙 ' + (M.rule ? M.ruleName + ' (' + M.rule.id + ')' : '없음'), ox, oy + PH + 54);
+    var rw = M.reward || {}; x.fillText('보상 ' + (rw.tower ? '탑 ' + rw.tower : rw.tickets ? '소환권 ' + rw.tickets : rw.gems ? '보석 ' + rw.gems : '-') + ', 필요 ' + (M.need || []).join(' '), ox, oy + PH + 71);
+  });
+  return [W, H];
+})
+"""
+async def main():
+    chs = [int(a) for a in sys.argv[1:] if a.isdigit()]
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 1400, 'height': 900})
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(800)
+        maps = await pg.evaluate("__td.MAPS.map(function(M){ return {id:M.id, ch:M.ch, name:M.name, theme:M.theme, grid:M.grid, paths:M.paths, sea:M.sea, air:M.air, waves:M.waves, boss:M.boss, rule:M.rule, ruleName:M.ruleName, reward:M.reward, need:M.need}; })")
+        names = ['말랑 왕국', '저주받은 밤', '강철 전선', '도깨비 고개']
+        for ch in (chs or sorted(set(m['ch'] for m in maps))):
+            ms = [m for m in maps if m['ch'] == ch]
+            if not ms: continue
+            pg2 = await b.new_page(viewport={'width': 1400, 'height': 900})
+            title = '%d장 %s 판 미리보기 (%d판)' % (ch, names[ch - 1] if len(names) >= ch else '', len(ms))
+            wh = await pg2.evaluate(JS + '(' + json.dumps(ms) + ',' + json.dumps(title) + ')')
+            await pg2.set_viewport_size({'width': wh[0], 'height': wh[1]})
+            path = OUT + 'sg_sheet_ch%d.png' % ch
+            await pg2.screenshot(path=path, full_page=True); print(path, wh)
+            await pg2.close()
+        await b.close()
+asyncio.run(main())

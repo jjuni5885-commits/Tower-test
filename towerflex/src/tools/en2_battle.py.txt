@@ -1,0 +1,38 @@
+# EN2 전투 캡처: python3 tools/en2_battle.py <맵 번호> <out.png> [가로x세로] [적 키(콤마)] [첫 적의 길 위 거리]
+# 사본의 옛 8x14 판에 2장 적을 시험용 고리(__SP)로 길 위에 세워 찍는다. src 는 건드리지 않음 (임시 사본 /tmp/en2w/test.html)
+import asyncio, sys, os, json
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import en2_hook
+from playwright.async_api import async_playwright
+MI = int(sys.argv[1]) if len(sys.argv) > 1 else 11
+OUT = sys.argv[2] if len(sys.argv) > 2 else '/tmp/en2w/battle.png'
+VW, VH = [int(v) for v in (sys.argv[3] if len(sys.argv) > 3 else '360x640').split('x')]
+D0 = float(sys.argv[5]) if len(sys.argv) > 5 else 0.7
+KEYS = sys.argv[4].split(',') if len(sys.argv) > 4 else ['zombie', 'ghoul', 'phantom', 'pumpkin', 'mummy', 'scarab', 'scarab', 'werewolf', 'vampire', 'coffin', 'doll', 'zombie', 'pumpking', 'ghoul', 'count', 'doll', 'reaper', 'goblin', 'knight', 'bats', 'witch', 'gargoyle', 'vampbat', 'bats', 'bat']
+async def main():
+    src = en2_hook.make()
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': VW, 'height': VH}, device_scale_factor=2)
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error', 'warning') else None)
+        await pg.goto('file://' + src); await pg.wait_for_timeout(1500)
+        await pg.mouse.click(VW // 2, VH // 2); await pg.wait_for_timeout(400)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.start(%d,'normal')" % MI)
+        await pg.wait_for_timeout(2500)
+        info = await pg.evaluate("""(function(list){
+          var g = __td.G(), d = D0, df = D0 + 3.2, n = 0;
+          list.forEach(function(k, i){ var E = __td.EN[k]; if (!E) return; var fly = !!E.fly, big = E.boss ? 3.1 : (1.0 + E.size * 0.9);
+            var e = __SP(k, 0, fly ? df : d, { hp: 1e7, mhp: 1e7, spd: 0.03 }); if (i % 6 === 3) e.hitT = 0.09; if (fly) df += big * 1.2; else d += big; n++; });
+          g.seenEnemies = g.seenEnemies || {};
+          return { n: g.enemies.length, S: __td.view().S };
+        })(KEYS)""".replace("KEYS", json.dumps(KEYS)).replace("D0", str(D0)))
+        print(info)
+        await pg.wait_for_timeout(700)
+        await pg.evaluate("__td.closeModal && __td.closeModal()")
+        await pg.wait_for_timeout(3600)
+        await pg.screenshot(path=OUT)
+        print('errors', len(errs)); [print(e) for e in errs[:10]]
+        await b.close()
+asyncio.run(main())

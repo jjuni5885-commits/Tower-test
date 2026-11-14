@@ -1,0 +1,136 @@
+# REN1 탑, 탄, 연출 확인용 캡처: python3 tools/rtshot.py <장면[,장면...]|all> [가로x세로] [--plain]
+# 전투 중인 게임에 SPEC 7절 형식의 가짜 탄, 사건, 유닛을 넣어 장면을 만든다(탑 로직 갈래가 없어도 그림만 확인).
+# 기본은 /tmp/rtov/out/index.html(tools/rtbuild.py 가 만든 겹침 빌드: 탑 그림 갈래 포함), --plain 이면 내 사본 out/index.html
+# 결과: shots/rt_<크기>_<장면>_<번호>.png, 자세히 보는 조각은 _z.png (2배 확대)
+import sys, asyncio, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+PREP = """(function(){ try { __td.closeModal(); } catch (e) {} var m=document.getElementById('sModal'); if(m) m.classList.add('hide'); document.getElementById('story').classList.add('hide'); var g=__td.G(); g.gold=9e6; g.maxLv=6; __rt.sim(); __rt.hq();
+ window.B=function(k,c,r,lvl,br){ var t=__td.build(k,c,r); if(!t) return null; for(var i=1;i<(lvl||1);i++){ g.gold=9e6; __td.upgrade(t, br||0); } t.born=-9; return t; };
+ window.Q=function(){ g.ev.length=0; };
+ window.SH=function(o){ return __rt.shoot(o); }; window.EV=function(n,o){ return __rt.ev(n,o); };
+ var s=__td.st(); return [g.M.id, g.cols, g.rows, 'paused', s.paused, 'modal', s.modal, s.kind]; })()"""
+# 장면: (판 번호, 준비 JS, [(기다릴 ms, 그때 실행할 JS 또는 None)...]) → 단계마다 캡처
+SC = {}
+SC['missile'] = (4, """
+ var a=B('sam',1,5,3), b=B('sam',8,10,5,0), c=B('rocket',0,10,3), d=B('rocket',8,2,5,1), e=B('flak',3,1,3), f=B('singijeon',6,5,4,1); Q();
+ window.T=[a,b,c,d,e,f];
+ window.F1=function(){ var g=__td.G();
+  T[0].aim=-0.6; T[0].fireT=0.35; EV('launch',{tw:T[0]}); SH({kind:'missile',src:{tw:T[0]},sx:1.5,sy:5.2,tx:6.5,ty:1.2,z0:0.8,z1:0.9,T:1.1,curve:1.2,lvl:3,bk:'he',br:0.8});
+  T[1].aim=-2.4; T[1].fireT=0.35; EV('launch',{tw:T[1]}); SH({kind:'missile',src:{tw:T[1]},sx:8.5,sy:10.2,tx:3.5,ty:6.5,z0:0.8,z1:0.9,T:1.3,curve:-1.0,lvl:5,big:0.6,bk:'he',br:1.1});
+  for(var i=0;i<6;i++) (function(i){ setTimeout(function(){ T[2].aim=-0.3; T[2].fireT=0.35; T[2].shots=i; EV('launch',{tw:T[2],n:1}); SH({kind:'rocket',src:{tw:T[2]},sx:0.6,sy:10.3,tx:3.6+i*0.5,ty:12.2+(i%3)*0.5,z0:0.6,z1:0,h:1.4,T:0.95,lvl:3,bk:'he',br:0.7}); }, i*70); })(i);
+  for(var j=0;j<5;j++) (function(j){ setTimeout(function(){ T[3].aim=2.2; T[3].fireT=0.35; EV('launch',{tw:T[3],n:1}); SH({kind:'rocket',src:{tw:T[3]},el:'fire',sx:8.5,sy:2.3,tx:4.5+j*0.45,ty:3.6+(j%2)*0.5,z0:0.6,z1:0,h:1.2,T:0.9,lvl:5,bk:'fire',br:0.8}); }, j*80); })(j);
+  for(var k=0;k<4;k++) (function(k){ setTimeout(function(){ T[4].aim=0.5; T[4].fireT=0.35; T[4].shots=k; EV('muzzle',{tw:T[4],n:1}); SH({kind:'flakshell',src:{tw:T[4]},sx:3.8,sy:1.2,tx:6.6+k*0.5,ty:2.4+k*0.35,z0:0.6,z1:0.8,T:0.35,lvl:3,bk:'flak',br:0.55}); }, k*120); })(k);
+  for(var q=0;q<7;q++) (function(q){ setTimeout(function(){ T[5].aim=1.9; T[5].fireT=0.35; T[5].shots=q; EV('muzzle',{tw:T[5],n:1,arrow:1}); SH({kind:'sinarrow',src:{tw:T[5]},sx:6.5,sy:5.5,tx:3.2+q*0.42,ty:8.4+(q%3)*0.3,z0:0.6,z1:0.1,h:0.9,T:0.85,lvl:4,bk:q%3?'':'he',br:0.45}); }, q*60); })(q);
+ };""", [(2, 'F1()'), (3, None), (5, None), (7, None), (9, None), (12, None), (15, None), (18, None), (22, None), (27, None), (33, None), (40, None), (55, None)], [('a', 4.0, 3.2, 8, 6.4), ('b', 4.4, 10.4, 8.8, 5.6)])
+SC['shells'] = (3, """
+ var a=B('warship',9,3,3), b=B('turtle',8,9,3), c=B('gatling',1,7,3), d=B('sniper',4,11,3), e=B('shrine',0,2,4,1), f=B('airbase',6,6,3), h=B('warship',9,11,5,1); Q();
+ window.T=[a,b,c,d,e,f,h];
+ window.F1=function(){
+  T[0].aim=2.6; T[0].fireT=0.35; EV('muzzle',{tw:T[0],n:0}); SH({kind:'navshell',src:{tw:T[0]},sx:9.0,sy:3.4,tx:3.5,ty:6.4,z0:0.5,z1:0,h:1.6,T:1.0,lvl:3,bk:'he',br:1.0});
+  T[6].aim=3.0; T[6].fireT=0.35; EV('muzzle',{tw:T[6],n:1}); SH({kind:'navshell',src:{tw:T[6]},sx:9.0,sy:11.4,tx:7.6,ty:14.3,z0:0.5,z1:0,h:1.2,T:0.9,lvl:5,big:0.5,bk:'water',br:1.0});
+  T[1].aim=3.3; T[1].fireT=0.35; EV('muzzle',{tw:T[1]}); for(var i=0;i<3;i++) SH({kind:'ball',src:{tw:T[1]},sx:8.0,sy:9.5,tx:5.4,ty:8.6+i*0.6,z0:0.35,z1:0.1,h:0.5,T:0.55+i*0.08,lvl:3,bk:i?'he':'water',br:0.5});
+  for(var k=0;k<5;k++) (function(k){ setTimeout(function(){ T[2].aim=0.3; T[2].fireT=0.35; T[2].shots=k; T[2].spin+=1; EV('muzzle',{tw:T[2],n:k}); SH({kind:'bullet',src:{tw:T[2]},sx:2.0,sy:7.4,tx:5.3,ty:8.3,z0:0.5,z1:0.3,T:0.22,lvl:3}); EV('tracer',{x0:1.5,y0:7.5,x1:4.6+k*0.2,y1:6.2-k*0.1,k:'gat',tw:T[2]}); }, k*90); })(k);
+  T[3].aim=-1.2; T[3].fireT=0.35; EV('muzzle',{tw:T[3]}); EV('tracer',{x0:4.5,y0:11.5,x1:6.2,y1:6.8,k:'sniper',tw:T[3]});
+  for(var j=0;j<3;j++) (function(j){ setTimeout(function(){ T[4].aim=0.8; T[4].fireT=0.35; EV('muzzle',{tw:T[4],n:1,paper:1}); SH({kind:'talisman',src:{tw:T[4]},sx:0.5,sy:2.3,tx:3.6+j*0.5,ty:3.4+j*0.5,z0:0.7,z1:0.3,T:0.7,curve:0.4,lvl:4,bk:'holy',br:0.7}); }, j*160); })(j);
+  SH({kind:'bomb',sx:1.6,sy:13.2,tx:2.3,ty:13.5,z0:2.6,z1:0,T:0.9,lvl:3,bk:'he',br:1.0}); SH({kind:'bomb',sx:3.2,sy:14.2,tx:3.8,ty:14.6,z0:2.6,z1:0,T:1.15,lvl:3,bk:'fire',br:0.9});
+  SH({kind:'torpedo',sx:9.4,sy:6.6,tx:7.6,ty:1.2,z0:0,z1:0,T:1.4,lvl:3,bk:'water',br:0.8}); SH({kind:'mystery',sx:0.5,sy:9.5,tx:3,ty:10.5,z0:0.4,z1:0.4,T:1.2});
+ };""", [(2, 'F1()'), (3, None), (5, None), (7, None), (9, None), (12, None), (15, None), (18, None), (22, None), (27, None), (33, None), (40, None), (55, None)], [('a', 4.0, 4.4, 8, 6.8), ('b', 5.0, 11.6, 10, 6.8)])
+SC['blasts'] = (0, """ Q();
+ window.F1=function(){ var ks=['he','fire','flak','emp','ice','holy','water','dark'];
+  ks.forEach(function(k,i){ EV('blast',{x:1.6+(i%3)*3.3, y:2.2+Math.floor(i/3)*4.6, r:[0.7,1.0,0.6,1.1,0.9,0.9,1.0,1.0][i], k:k}); EV('blast',{x:2.9+(i%3)*3.3, y:4.2+Math.floor(i/3)*4.6, r:0.45, k:k}); });
+  EV('blast',{x:5,y:13.6,r:2.2,k:'he'}); EV('orbital',{x:8.3,y:12.2,r:1}); };""", [(2, 'F1()'), (3, None), (4, None), (5, None), (6, None), (8, None), (10, None), (13, None), (17, None), (22, None), (28, None), (36, None), (50, None)], [('a', 5.0, 5.6, 10, 9.6), ('b', 5.6, 12.6, 8.8, 5.2)])
+SC['beams'] = (4, """
+ var a=B('laser',1,5,3), b=B('laser',8,10,5,0), c=B('laser',0,10,6,1), d=B('tesla',3,1,3), e=B('tesla',6,5,5,1), f=B('arcane',8,2,5,0); Q(); window.T=[a,b,c,d,e,f];
+ var E=[__td.fd.spawn('goblin',0,6), __td.fd.spawn('orc',0,7), __td.fd.spawn('orc',0,16), __td.fd.spawn('goblin',0,17), __td.fd.spawn('bat',0,18), __td.fd.spawn('orc',0,30), __td.fd.spawn('goblin',0,3)]; E.forEach(function(e){ e.spd=0.0001; e.hp=e.mhp=9e9; }); window.E=E;
+ window.F1=function(){ var A=function(t,e){ t.aim=Math.atan2(e.y-t.y,e.x-t.x); t.fireT=9; t.beamTgt=e; };
+  A(T[0],E[0]); T[0].busy=0.3; T[0].beams=[[T[0].x,T[0].y,E[0].x,E[0].y,1]];
+  A(T[1],E[2]); T[1].busy=1; T[1].beams=[[T[1].x,T[1].y,E[2].x,E[2].y,1],[E[2].x,E[2].y,E[3].x,E[3].y,0.6],[E[2].x,E[2].y,E[4].x,E[4].y,0.6],[E[2].x,E[2].y,E[5].x,E[5].y,0.6]];
+  T[2].aim=0.75; T[2].fireT=9; T[2].busy=0.9; T[2].st.line=1; T[2].beams=[[T[2].x,T[2].y,T[2].x+Math.cos(0.75)*9,T[2].y+Math.sin(0.75)*9,1]];
+  T[3].fireT=0.35; EV('chain',{tw:T[3],k:'tesla',pts:[[T[3].x,T[3].y-0.9],[E[6].x,E[6].y-0.3],[E[0].x,E[0].y-0.3],[E[1].x,E[1].y-0.35]],lvl:3});
+  T[4].fireT=0.35; EV('chain',{tw:T[4],k:'tesla',pts:[[T[4].x,T[4].y-0.9],[E[1].x,E[1].y-0.3],[E[2].x,E[2].y-0.3]],lvl:5}); EV('blast',{x:E[1].x,y:E[1].y,r:1.2,k:'emp',z:0.3});
+  EV('chain',{pts:[[4.3,9.2],[4.6,13.4]],k:'shrine',lvl:6,sky:1}); EV('blast',{x:4.6,y:13.6,r:0.9,k:'holy'});
+  EV('impact',{x:7.5,y:13.2,z:0.3,k:'talisman'}); EV('impact',{x:8.5,y:14.4,z:0.3,k:'sword',crit:1}); EV('impact',{x:6.5,y:14.6,z:0.3,k:'bullet'}); EV('seal',{x:2.5,y:14.4});
+ };""", [(2, 'F1()'), (3, None), (4, None), (6, None), (9, None), (12, None), (16, None), (20, 'F1()'), (21, None), (23, None)], [('a', 4.0, 4.0, 8, 7.6), ('b', 5.0, 11.0, 10, 6.4)])
+SC['transform'] = (0, """
+ var a=B('archer',3,4,3), b=B('cannon',6,6,5,0), c=B('flak',4,9,3), d=B('laser',8,12,5,1), e=B('gatling',1,12,3); Q(); window.T=[a,b,c,d,e];
+ window.F1=function(){ var g=__td.G(); g.gold=9e6; __td.upgrade(T[0],0); g.gold=9e6; __td.upgrade(T[2],1); g.gold=9e6; __td.upgrade(T[4],0); };
+ window.F2=function(){ var g=__td.G(); g.gold=9e6; __td.upgrade(T[1]); g.gold=9e6; __td.upgrade(T[3]); };""", [(2, 'F1()'), (4, None), (8, None), (12, None), (15, None), (18, None), (20, None), (22, None), (25, None), (30, None), (40, None), (50, 'F2()'), (54, None), (60, None), (66, None), (70, None), (73, None), (76, None), (80, None), (90, None)], [('a', 3.0, 6.8, 6, 9.6), ('b', 7.0, 8.4, 6, 10.4)])
+SC['fuse'] = (3, """
+ var a=B('archer',3,6,5,0), b=B('ballista',2,6,5,1), c=B('warship',8,10,5,0), d=B('airbase',6,10,5,0), e=B('cannon',1,10,5,0), f=B('catapult',1,11,5,1); Q(); window.T=[a,b,c,d,e,f];
+ window.FZ=function(i,j,to,at){ var g=__td.G(), A=T[i], Bt=T[j], nt;
+  if (typeof __rt.fuse==='function' && 0) return; g.towers=g.towers.filter(function(t){ return t!==A && t!==Bt; });
+  var P=at?Bt:A; nt={ id:g.idSeq++, k:to, lvl:1, br:0, c:P.c, r:P.r, x:P.x, y:P.y, cd:9, aim:-1.57, mode:'first', spent:0, kills:0, dmg:0, frozenT:0, fireT:0, side:0, born:g.t, buff:{dmg:0,spd:0,rng:0}, st:{kind:'none',range:3}, hit:'gas', site:'land', stunT:0, hexT:0, charmT:0, shots:0, spin:0, busy:0, out:0 };
+  g.towers.push(nt); g.towerAt.fill(-1); g.towers.forEach(function(t,n){ g.towerAt[t.r*g.cols+t.c]=n; }); EV('fuse',{a:A,b:Bt,tw:nt}); return nt; };
+ window.F1=function(){ FZ(0,1,'fz_skybow'); FZ(2,3,'fz_carrier'); }; window.F2=function(){ FZ(4,5,'fz_fortress'); };""", [(2, 'F1()'), (5, None), (10, None), (15, None), (20, None), (24, None), (27, None), (30, None), (33, None), (37, None), (45, None), (60, None)], [('a', 4.0, 5.6, 7, 5.6), ('b', 7.0, 9.6, 6, 5.6)])
+SC['units'] = (4, """
+ var a=B('airbase',1,5,3), b=B('airbase',8,10,5,0), c=B('airbase',0,10,5,1), d=B('barracks',3,1,3), e=B('barracks',6,5,5,0), f=B('barracks',8,2,5,1), h=B('dragon',3,10,1); Q(); window.T=[a,b,c,d,e,f,h];
+ var g=__td.G(); g.units.length=0; window.U=[];
+ function P(tw,cx,cy,r,ph,sp){ var u={kind:'plane',tw:tw,x:cx,y:cy,ang:0,z:0.9,hp:1,cx:cx,cy:cy,r:r,ph:ph,sp:sp}; g.units.push(u); U.push(u); return u; }
+ P(a,2.5,5,1.3,0,2.2); P(b,7,9,1.5,2,1.8); P(b,7,9,1.5,4,1.8); P(c,2,12,1.2,1,-2.6); P(null,5,3,1.0,3,2.4);
+ function S(tw,x,y,o){ var u={kind:'soldier',tw:tw,x:x,y:y,hp:60,mhp:100,id:U.length}; for(var k in o) u[k]=o[k]; g.units.push(u); U.push(u); return u; }
+ S(d,2.3,2.4,{hp:100,st:'guard'}); S(d,2.7,2.9,{st:'guard',atk:1,hp:40,face:-1}); S(d,2.2,3.3,{st:'walk',walk:1}); S(e,5.2,6.8,{st:'guard',atk:1}); S(e,5.6,7.3,{st:'guard',hp:20}); S(e,5.0,7.6,{st:'walk',walk:1}); S(f,7.2,3.4,{st:'guard',atk:1}); S(f,7.6,3.9,{st:'walk',walk:1}); S(null,4.4,8.6,{});
+ var dr={kind:'dragon',tw:h,x:5,y:11,ang:0,z:1.0,hp:1,cx:5,cy:11.5,r:1.6,ph:0,sp:1.3,breath:1,flameR:2.0,cone:60}; g.units.push({kind:'plane',tw:a,x:a.x,y:a.y,ang:0,z:0,st:'park'}); g.units.push(dr); U.push(dr);
+ window.__rtT=0; window.__rtIv=setInterval(function(){ __rtT+=0.016; U.forEach(function(u){ if(u.r){ var a=u.ph+__rtT*u.sp; u.x=u.cx+Math.cos(a)*u.r; u.y=u.cy+Math.sin(a)*u.r*0.7; u.ang=Math.atan2(Math.cos(a)*0.7*(u.sp>0?1:-1), -Math.sin(a)*(u.sp>0?1:-1)); if(u.kind==='plane') u.fireT=(Math.sin(a*2)>0.6)?1:0; } if(u.walk){ u.x+=Math.sin(__rtT*2+u.id)*0.006; u.face=Math.cos(__rtT*2+u.id)>0?1:-1; } if(u.atk){ u.atkT=((__rtT*1.6+u.id*0.37)%1)<0.4 ? 0.25*(1-((__rtT*1.6+u.id*0.37)%1)/0.4) : 0; } }); },16);
+ window.F1=function(){ EV('planeOut',{tw:T[0]}); EV('tracer',{x0:U[1].x,y0:U[1].y,x1:6,y1:11,k:'plane',z0:0.9}); };""", [(30, 'F1()'), (32, None), (36, None), (45, None), (60, None)], [('a', 3.4, 3.4, 6.8, 6.8), ('b', 5.0, 10.6, 10, 6.4)])
+SC['towers'] = (3, """
+ var ks=['archer','catapult','arcane','frost','ballista','bell','flame','alchemy','cannon','mint','flak','sam','gatling','sniper','rocket','laser','tesla','airbase','singijeon','jangseung','barracks','shrine'], g=__td.G(), n=0, cells=[];
+ for(var r=1;r<g.rows-1;r+=2) for(var c=0;c<7;c+=2) cells.push([c,r]);
+ window.T=[]; var ci=0; ks.forEach(function(k,i){ var t=null; while(!t && ci<cells.length){ t=B(k,cells[ci][0],cells[ci][1],6,i%2); ci++; } if(t) T.push(t); });
+ [['warship',8,2,6,0],['turtle',9,5,6,1],['fz_carrier',8,8,1,0],['fz_dragonship',9,11,1,0],['warship',7,14,3,0]].forEach(function(q){ var t=B(q[0],q[1],q[2],q[3],q[4]); if(t) T.push(t); });
+ [['fz_skybow',5,0],['fz_aegis',6,2],['omega',5,6],['fz_storm',5,12]].forEach(function(q){ var t=B(q[0],q[1],q[2],1,0); if(t) T.push(t); }); Q();
+ window.F1=function(){ T.forEach(function(t,i){ t.aim=i*0.7; if(i%2===0){ t.fireT=0.35; EV('muzzle',{tw:t,n:i}); } }); };""", [(20, None), (30, 'F1()'), (31, None), (33, None)], [('a', 3.5, 4.4, 7, 8.8), ('b', 3.5, 12.4, 7, 8.8)])
+
+# 프레임 단위 캡처: 게임 캔버스를 정한 프레임에 페이지 안에서 복사해 두었다가 한꺼번에 꺼낸다(스크린샷 지연 없이 60분의 1초 단위)
+GRAB = """(function(steps){ var cv=document.getElementById('game'), n=0, i=0, out=[]; window.__grab={done:0,out:out};
+ function tick(){ __rt.hq(); while(i<steps.length && steps[i][0]<=n){ if(steps[i][1]) { try { (0,eval)(steps[i][1]); } catch(e){ console.error('step', e.message); } } else { var c=document.createElement('canvas'); c.width=cv.width; c.height=cv.height; c.getContext('2d').drawImage(cv,0,0); out.push(c); } i++; }
+  n++; if(i<steps.length) requestAnimationFrame(tick); else window.__grab.done=1; }
+ requestAnimationFrame(tick); })(%s)"""
+async def run(names, W, H, html):
+    import base64, io, json
+    from PIL import Image
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        for name in names:
+            mi, prep, steps, crops = SC[name]
+            ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+            pg = await ctx.new_page(); errs = []
+            pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+            pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+            await pg.goto('file://' + html); await pg.wait_for_timeout(1200)
+            await pg.evaluate("__td.SAVE().tut.done=1; Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1300)
+            info = await pg.evaluate(PREP)
+            await pg.evaluate('(function(){' + prep + '})()'); await pg.wait_for_timeout(600)
+            await pg.evaluate(GRAB % json.dumps([[f, js] for f, js in steps]))
+            for _ in range(200):
+                if await pg.evaluate("window.__grab.done"): break
+                await pg.wait_for_timeout(100)
+            await pg.wait_for_timeout(100)
+            v = await pg.evaluate("(function(){ var v=__td.view(); return {S:v.S, ox:v.ox, oy:v.oy}; })()")
+            n = await pg.evaluate("window.__grab.out.length"); ims = []
+            for k in range(n):
+                d = await pg.evaluate("window.__grab.out[%d].toDataURL('image/png')" % k)
+                ims.append(Image.open(io.BytesIO(base64.b64decode(d.split(',')[1]))).convert('RGB'))
+            if ims: ims[len(ims) // 2].save(OUT + 'rt_%dx%d_%s_full.png' % (W, H, name))
+            # 조각 띠: 프레임마다 같은 자리를 잘라 2배로 키워 한 장에 (한 줄 3장)
+            for cn, cx, cy, cw, ch in crops:
+                S = v['S']; x0 = int(v['ox'] + (cx - cw / 2) * S); y0 = int(v['oy'] + (cy - ch / 2) * S); pw = int(cw * S); ph = int(ch * S)
+                per = 2; pages = [ims[q:q + 6] for q in range(0, len(ims), 6)]
+                for pn, page in enumerate(pages):
+                    rows = (len(page) + per - 1) // per; sheet = Image.new('RGB', (pw * 2 * per + (per - 1) * 4, ph * 2 * rows + (rows - 1) * 4), (20, 16, 30))
+                    for k, im in enumerate(page):
+                        sheet.paste(im.crop((x0, y0, x0 + pw, y0 + ph)).resize((pw * 2, ph * 2), Image.LANCZOS), ((k % per) * (pw * 2 + 4), (k // per) * (ph * 2 + 4)))
+                    sheet.save(OUT + 'rt_%dx%d_%s_%s%d.png' % (W, H, name, cn, pn + 1))
+            st = await pg.evaluate("(function(){ var n=__rt.n(), s=__td.st(); return {rt:n, err:s.err||0, fps:Math.round(__td.fps()), towers:__td.G().towers.length}; })()")
+            print(name, info, st, '프레임', n, '콘솔 오류:', errs[:4])
+            await ctx.close()
+        await b.close()
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    names = (args[0] if args else 'all').split(','); names = list(SC.keys()) if names == ['all'] else names
+    W, H = (map(int, args[1].split('x')) if len(args) > 1 else (360, 640))
+    html = ROOT + '/out/index.html' if '--plain' in sys.argv or not os.path.exists('/tmp/rtov/out/index.html') else '/tmp/rtov/out/index.html'
+    asyncio.run(run(names, W, H, html))
+main()

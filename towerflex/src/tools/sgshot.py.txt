@@ -1,0 +1,42 @@
+# 판 실제 화면 확인(STGA): python3 tools/sgshot.py [판 id ...] [초=40] [가로x세로=360x640]
+#   → shots/sg_<판 id>.png 와 여러 장을 나란히 붙인 shots/sg_contact_<첫 판 id>.png. id를 안 주면 1장과 2장 24판 전부(6장씩 묶음)
+# 봇으로 잠깐 돌린 전투 화면을 찍는다: 성문 위치, 길 시작(균열) 표시, 물과 뱃길, 항로, 지형 테마(없으면 대신 그림), 콘솔 오류를 본다
+import sys, asyncio, os
+from playwright.async_api import async_playwright
+from PIL import Image
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    ids = [a for a in sys.argv[1:] if a[0] in 'ct' and 'x' not in a]
+    secs = [int(a) for a in sys.argv[1:] if a.isdigit()]; sec = secs[0] if secs else 40
+    szs = [a for a in sys.argv[1:] if 'x' in a and a[0].isdigit()]; W, H = map(int, (szs[0] if szs else '360x640').split('x'))
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+        allids = await pg.evaluate("__td.MAPS.map(function(M){return M.id;})")
+        if not ids: ids = [i for i in allids if i.startswith('c1') or i.startswith('c2')]
+        shots = []
+        for id in ids:
+            if id not in allids: print('없는 판', id); continue
+            mi = allids.index(id)
+            await pg.evaluate("__td.SAVE().tut.done=1; __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % mi); await pg.wait_for_timeout(900)
+            info = await pg.evaluate("""(function(){ var g=__td.G(); g.gold=4000; __td.bot(1); var e0=null; try { for (var i=0;i<60*%d && !g.over;i++) __td.step(1); } catch (e) { e0=String(e && e.stack || e); }
+              return {id:g.M.id, theme:g.M.theme, rule:g.rule?g.rule.id:null, wave:g.wave, N:g.N, towers:g.towers.length, enemies:g.enemies.length, sea:g.enemies.filter(function(e){return e.dom==='s';}).length, lane:g.enemies.filter(function(e){return e.lane;}).length, lives:g.lives, over:g.over, err:e0}; })()""" % sec)
+            await pg.evaluate("document.getElementById('sModal').classList.add('hide')"); await pg.wait_for_timeout(600)
+            path = OUT + 'sg_%s.png' % id
+            await pg.screenshot(path=path); shots.append(path)
+            print(info)
+        print('콘솔 오류 %d건:' % len(errs), errs[:6])
+        await b.close()
+    for k in range(0, len(shots), 6):
+        grp = shots[k:k + 6]; ims = [Image.open(s).convert('RGB') for s in grp]; sc = 0.42
+        tw, th = int(ims[0].width * sc), int(ims[0].height * sc)
+        sheet = Image.new('RGB', (tw * len(ims) + 6 * (len(ims) + 1), th + 12), (30, 27, 46))
+        for i, im in enumerate(ims): sheet.paste(im.resize((tw, th), Image.LANCZOS), (6 + i * (tw + 6), 6))
+        cp = OUT + 'sg_contact_%s.png' % os.path.basename(grp[0])[3:-4]; sheet.save(cp); print(cp, sheet.size)
+asyncio.run(main())

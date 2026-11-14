@@ -1,0 +1,44 @@
+# STGB 판 전투 확인: python3 tools/sgb_shot.py [가로x세로] [판 id ...]  → shots/sgb_<크기>_<판 id>.png
+# 3, 4장 24판을 실제 화면으로 하나씩 열어 콘솔 오류를 세고, 고른 판(기본 7개)은 봇으로 40초 돌린 뒤 캡처한다
+# 지형 테마 그림(art_map2.js, art_map3.js)이 아직 없으면 기존 테마로 바꿔 그린다(판 자료의 키는 그대로, 화면 안에서만 바꿈)
+import sys, asyncio, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+FB = {'city': 'ruins', 'desert': 'canyon', 'harbor': 'meadow', 'airfield': 'snow', 'hanok': 'meadow', 'bamboo': 'forest', 'palace': 'ruins', 'pogu': 'swamp', 'sansa': 'canyon'}
+OLD = ['meadow', 'forest', 'swamp', 'deepforest', 'canyon', 'snow', 'ruins', 'volcano', 'dark']
+import re, glob
+ART = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(ROOT + '/src/art_map*.js'))
+def has_theme(k): return k in OLD or bool(re.search(r"THEME\.%s\s*=|THEME\[['\"]%s['\"]\]\s*=|^\s*%s:\s*\{" % (k, k, k), ART, re.M))
+async def main():
+    sizes = [a for a in sys.argv[1:] if 'x' in a and a[0].isdigit()] or ['360x780']
+    want = [a for a in sys.argv[1:] if a.startswith('c')] or ['c3s05', 'c3s09', 'c3s10', 'c3s11', 'c4s06', 'c4s07', 'c4s12']
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        for sz in sizes:
+            W, H = map(int, sz.split('x'))
+            ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+            pg = await ctx.new_page(); errs = []
+            pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+            pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+            await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1500)
+            maps = await pg.evaluate("__td.MAPS.map(function(m,i){return {i:i,id:m.id,ch:m.ch,theme:m.theme};}).filter(function(m){return m.ch===3||m.ch===4;})")
+            await pg.evaluate("__td.SAVE().tut.done=1; __td.unlockAll(); __td.ownAll();")
+            for m in maps:
+                n0 = len(errs)
+                # 테마 그림이 소스에 없으면 기존 테마로 바꿔 연다
+                fb = '' if has_theme(m['theme']) else FB.get(m['theme'], 'meadow')
+                if fb: await pg.evaluate("__td.MAPS[%d]._theme=__td.MAPS[%d].theme; __td.MAPS[%d].theme='%s'" % (m['i'], m['i'], m['i'], fb))
+                await pg.evaluate("__td.start(%d,'normal')" % m['i']); await pg.wait_for_timeout(700)
+                shot = m['id'] in want
+                info = await pg.evaluate("""(function(steps){ var g=__td.G(); g.gold=6000; __td.bot(1); for (var i=0;i<steps && !g.over;i++) __td.step(1);
+                  return {id:g.M.id, wave:g.wave, towers:g.towers.length, enemies:g.enemies.length, sea:g.enemies.filter(function(e){return e.dom==='s';}).length, lane:g.enemies.filter(function(e){return e.lane;}).length, air:g.enemies.filter(function(e){return e.dom==='a';}).length, lives:g.lives, over:g.over}; })(%d)""" % (60 * 45 if shot else 60 * 12))
+                if shot:
+                    await pg.evaluate("document.getElementById('sModal').classList.add('hide')"); await pg.wait_for_timeout(600)
+                    path = OUT + 'sgb_%s_%s.png' % (sz, m['id']); await pg.screenshot(path=path); info['shot'] = path
+                print(sz, info, ('대체 테마 ' + fb) if fb else '', '오류 %d' % (len(errs) - n0), errs[n0:n0 + 2])
+            print(sz, '콘솔 오류 합계:', len(errs), errs[:5])
+            await ctx.close()
+        await b.close()
+asyncio.run(main())

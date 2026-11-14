@@ -1,0 +1,44 @@
+# 조정자 둘러보기: python3 tools/tour.py [가로x세로]
+import asyncio, sys, os
+from playwright.async_api import async_playwright
+W,H = (sys.argv[1] if len(sys.argv)>1 else '360x780').split('x'); W=int(W); H=int(H)
+ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__))); OUT=ROOT+'/shots/tour_'
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width':W,'height':H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs=[]
+        pg.on('pageerror', lambda e: errs.append(str(e)[:200]))
+        pg.on('console', lambda m: errs.append('console:'+m.text[:200]) if m.type=='error' else None)
+        await pg.goto('file://'+ROOT+'/out/index.html'); await pg.wait_for_timeout(2500)
+        await pg.screenshot(path=OUT+'title.png')
+        await pg.evaluate("__adm && __adm.on && __adm.on(1)")
+        await pg.evaluate("__td.unlockAll && __td.unlockAll(); __td.ownAll && __td.ownAll()")
+        for js,name in [("__ch.sel()", 'chsel'), ("__ch.map(3)", 'map3'), ("__ch.map(4)", 'map4')]:
+            try: await pg.evaluate(js)
+            except Exception as e: errs.append('eval '+js+' '+str(e)[:100])
+            await pg.wait_for_timeout(1200); await pg.screenshot(path=OUT+name+'.png')
+        for sid in ['c3s10','c2s03','c4s12','c1s06']:
+            mi = await pg.evaluate("__td.MAPS.findIndex(function(m){return m.id==='%s'})" % sid)
+            try: await pg.evaluate("__ch.stage(%d)" % mi)
+            except Exception as e: errs.append('open '+str(e)[:100])
+            await pg.wait_for_timeout(1500); await pg.screenshot(path=OUT+sid+'_stage.png')
+            await pg.evaluate("__td.closeModal()")
+            await pg.evaluate("__td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1200)
+            for i in range(6):
+                k = await pg.evaluate("__td.st().kind")
+                if k: await pg.evaluate("__td.closeModal()"); await pg.wait_for_timeout(300)
+            await pg.evaluate("__td.bot(2)")
+            for i in range(90):
+                await pg.evaluate("__td.step(30)")
+                st = await pg.evaluate("__td.st()")
+                if st.get('modal'): await pg.evaluate("__td.closeModal()")
+                n = await pg.evaluate("__td.G() ? __td.G().enemies.length : 0")
+                if i>40 and n>=12: break
+            await pg.evaluate("__td.closeModal()"); await pg.wait_for_timeout(900)
+            await pg.screenshot(path=OUT+sid+'_battle.png')
+            info = await pg.evaluate("JSON.stringify({w:__td.G().wave, t:__td.G().towers.map(function(t){return t.k+t.lvl}), e:__td.G().enemies.length})")
+            print(sid, info)
+        print('errors', len(errs)); [print(' ',e) for e in errs[:12]]
+        await b.close()
+asyncio.run(main())

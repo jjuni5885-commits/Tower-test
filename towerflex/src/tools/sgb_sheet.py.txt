@@ -1,0 +1,75 @@
+# STGB 판 미리보기 그림판: python3 tools/sgb_sheet.py [챕터 번호...]  → shots/sgb_sheet_ch<N>.png (기본 3, 4장)
+# 지형 테마 그림과 무관하게 격자, 땅 길(갈색 선), 뱃길(남색 선), 항로(빨간 점선), 성문(빨강), 바위, 장애물을 작은 지도로 나란히 그린다
+import sys, os, json, subprocess, math
+from PIL import Image, ImageDraw, ImageFont
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+JS = "const c=require('%s/tools/fdload.js')();process.stdout.write(c.run('JSON.stringify(MAPS)'))" % ROOT
+MAPS = json.loads(subprocess.check_output(['node', '-e', JS]).decode('utf-8'))
+def font(sz):
+    for p in ['/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf', '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc', '/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc']:
+        if os.path.exists(p): return ImageFont.truetype(p, sz)
+    import glob
+    for p in glob.glob(ROOT + '/node_modules/**/*.ttf', recursive=True) + glob.glob('/usr/share/fonts/**/*.tt[fc]', recursive=True):
+        try:
+            f = ImageFont.truetype(p, sz)
+            if f.getmask('가').getbbox(): return f
+        except Exception: pass
+    return ImageFont.load_default()
+S = 18; PADX = 14; HEAD = 44; COLS_N = 6
+F = font(13); FS = font(11)
+LAND = {3: (196, 200, 188), 4: (214, 222, 178)}
+def arrow(d, pts, col, w, dash=0):
+    for i in range(1, len(pts)):
+        (x0, y0), (x1, y1) = pts[i - 1], pts[i]
+        if dash:
+            L = math.hypot(x1 - x0, y1 - y0); n = max(1, int(L / dash));
+            for k in range(0, n, 2):
+                a, b = k / n, min(1, (k + 1) / n); d.line([x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b], fill=col, width=w)
+        else: d.line([x0, y0, x1, y1], fill=col, width=w)
+    (x0, y0), (x1, y1) = pts[-2], pts[-1]; a = math.atan2(y1 - y0, x1 - x0); h = 7
+    d.polygon([(x1, y1), (x1 - h * math.cos(a - 0.5), y1 - h * math.sin(a - 0.5)), (x1 - h * math.cos(a + 0.5), y1 - h * math.sin(a + 0.5))], fill=col)
+def draw_map(M):
+    cols, rows = M.get('cols', 10), M.get('rows', 17); W, H = cols * S, rows * S
+    im = Image.new('RGB', (W + PADX * 2, H + HEAD + 10), (250, 248, 240)); d = ImageDraw.Draw(im)
+    ox, oy = PADX, HEAD
+    seaCells = set()
+    for w in M.get('sea', []):
+        for i in range(1, len(w)):
+            a, b = w[i - 1], w[i]; sx = (b[0] > a[0]) - (b[0] < a[0]); sy = (b[1] > a[1]) - (b[1] < a[1]); x, y = a
+            while True:
+                seaCells.add((x, y))
+                if x == b[0] and y == b[1]: break
+                x += sx; y += sy
+    for r in range(rows):
+        for c in range(cols):
+            ch = M['grid'][r][c]; x0, y0 = ox + c * S, oy + r * S
+            col = LAND.get(M.get('ch', 3), (200, 210, 190))
+            if ch in '=G': col = (236, 214, 160)
+            elif ch == '~': col = (112, 170, 222) if (c, r) in seaCells else (150, 200, 240)
+            elif ch == '#': col = (110, 110, 120)
+            d.rectangle([x0, y0, x0 + S - 1, y0 + S - 1], fill=col, outline=(255, 255, 255))
+            if ch in 'abc': d.ellipse([x0 + 5, y0 + 5, x0 + S - 6, y0 + S - 6], fill=(120, 150, 90))
+            if ch == 'C': d.rectangle([x0 + 2, y0 + 2, x0 + S - 3, y0 + S - 3], fill=(120, 150, 90))
+            if ch == 'd': d.rectangle([x0 + 4, y0 + 5, x0 + S - 5, y0 + S - 5], fill=(240, 190, 40), outline=(120, 80, 20))
+            if ch == 'G': d.rectangle([x0 + 1, y0 + 1, x0 + S - 2, y0 + S - 2], fill=(220, 50, 60), outline=(90, 10, 20))
+    def P(p): return (ox + (p[0] + 0.5) * S, oy + (p[1] + 0.5) * S)
+    pcols = [(120, 70, 30), (200, 100, 20), (150, 40, 110)]
+    for i, w in enumerate(M['paths']): arrow(d, [P(p) for p in w], pcols[i % 3], 2)
+    for i, w in enumerate(M.get('sea', [])): arrow(d, [P(p) for p in w], (20, 50, 150) if i == 0 else (60, 110, 200), 2)
+    for a in M.get('air', []): arrow(d, [P(a[0:2]), P(a[2:4])], (230, 30, 40), 2, dash=5)
+    d.rectangle([0, 0, im.width, HEAD - 2], fill=(250, 248, 240))
+    d.rectangle([ox - 1, oy - 1, ox + W, oy + H], outline=(60, 60, 60))
+    d.text((PADX, 4), '%s %s' % (M['id'], M['name']), font=F, fill=(20, 20, 30))
+    tag = '%s / %s%s / %d' % (M['theme'], (M.get('rule') or {}).get('id', '-'), (' / ' + M['boss']) if M.get('boss') else '', M['waves'])
+    d.text((PADX, 24), tag, font=FS, fill=(60, 40, 90))
+    return im
+os.makedirs(OUT, exist_ok=True)
+chs = [int(a) for a in sys.argv[1:]] or [3, 4]
+for ch in chs:
+    ms = [M for M in MAPS if M.get('ch') == ch]
+    if not ms: continue
+    ims = [draw_map(M) for M in ms]; w, h = ims[0].size; n = len(ims); rowsN = (n + COLS_N - 1) // COLS_N
+    sheet = Image.new('RGB', (w * COLS_N, h * rowsN), (250, 248, 240))
+    for i, im in enumerate(ims): sheet.paste(im, ((i % COLS_N) * w, (i // COLS_N) * h))
+    p = OUT + 'sgb_sheet_ch%d.png' % ch; sheet.save(p); print(p, sheet.size)

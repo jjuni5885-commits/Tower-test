@@ -1,0 +1,52 @@
+# [UIB] 전투 화면 캡처: python3 tools/uibshot.py [가로x세로 ...] [ch=1,2,3,4]  → shots/uibs_<크기>_ch<장>_<장면>.png
+# 장면: hud(규칙 설명 뜬 전투 화면), build(건설 쟁반 8종, 탑 고름), water(물 칸), branch(갈래 선택), fuse(궁극 + 합체), wave(전투 중, 6종 웨이브 미리보기)
+# 챕터 색(style_ch.css의 --ch-* 변수)이 아직 없으면 SPEC 8절 분위기에 맞춘 임시 색을 화면에만 끼워서 본다(DEMO)
+import sys, asyncio, os, re
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+FAKE = re.search(r'REAL = r"""(.*?)"""', open(os.path.join(ROOT, 'tools', 'uibflow.py'), encoding='utf-8').read(), re.S).group(1)
+DEMO = """
+body[data-ch="2"] { --ch-bg: #1b1230; --ch-panel: #2a1d45; --ch-line: #7a4fd0; --ch-accent: #ff8a2a; --ch-accent2: #9b6bff; --ch-ink: #f3ecff; --ch-btn: #ff8a2a; --ch-btn-ink: #2a1200; }
+body[data-ch="3"] { --ch-bg: #131c2b; --ch-panel: #1f2c40; --ch-line: #5b7697; --ch-accent: #ffb020; --ch-accent2: #6fb6ff; --ch-ink: #eaf2ff; --ch-btn: #ffb020; --ch-btn-ink: #1a1200; }
+body[data-ch="4"] { --ch-bg: #f3e8d2; --ch-panel: #f8f0dd; --ch-line: #b5523b; --ch-accent: #c8402f; --ch-accent2: #2f7a6b; --ch-ink: #2b1d14; --ch-btn: #c8402f; --ch-btn-ink: #fff6e6; }
+"""
+async def main():
+    sizes = [a for a in sys.argv[1:] if re.match(r'^\d+x\d+$', a)] or ['360x640', '360x780', '412x915']
+    chs = [1]
+    for a in sys.argv[1:]:
+        if a.startswith('ch='): chs = [int(v) for v in a[3:].split(',')]
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        for sz in sizes:
+            W, H = map(int, sz.split('x'))
+            for ch in chs:
+                ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+                pg = await ctx.new_page(); errs = []
+                pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+                pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+                await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+                await pg.evaluate(FAKE)
+                await pg.evaluate("document.body.setAttribute('data-ch', '%d')" % ch)
+                if not await pg.evaluate("getComputedStyle(document.body).getPropertyValue('--ch-accent').trim()") and ch > 1: await pg.add_style_tag(content=DEMO)
+                await pg.evaluate("var s=__td.SAVE(); s.tut.done=1; __td.unlockAll(); __td.ownAll(); __td.start(3,'normal')"); await pg.wait_for_timeout(1300)
+                for i in range(3):
+                    if await pg.evaluate("__td.st().kind==='pick' && !!document.querySelector('.pkc')"): await pg.evaluate("document.querySelector('.pkc').click()"); await pg.wait_for_timeout(1100)
+                await pg.evaluate("document.body.setAttribute('data-ch', '%d')" % ch)
+                async def shot(n, wait=400):
+                    await pg.wait_for_timeout(wait); path = OUT + 'uibs_%s_ch%d_%s.png' % (sz, ch, n); await pg.screenshot(path=path); return path
+                info = await pg.evaluate("""(function(){var g=__td.G(); g.towersOk=['archer','catapult','flak','frost','ballista','gatling','warship','turtle']; g.gold=6000; g.fuse=true; g.maxLv=6; g.M.ruleName='짙은 안개'; g.M.ruleDesc='안개가 끼어 모든 탑의 사거리가 15% 줄어듭니다.'; g.rule=g.rule||{id:'fog'}; __uib.hud(); var f=__uib.fit(); f.side=+(__td.view().ox/__td.view().dpr).toFixed(1); return f;})()""")
+                await pg.wait_for_timeout(2300); await shot('hud', 200)
+                cells = await pg.evaluate("""(function(){var g=__td.G(), land=[], water=[]; for (var r=0;r<g.rows;r++) for (var c=0;c<g.cols;c++){ var i=r*g.cols+c, o=g.obsAt[i]; if (o>=0 && g.obs[o].alive) continue; if (g.kind[i]==='g') land.push([c,r]); else if (g.kind[i]==='water' && !(g.seaCell&&g.seaCell[i])) water.push([c,r]); } return {land:land, water:water};})()""")
+                lc = cells['land'][len(cells['land']) // 2]; wc = cells['water'][len(cells['water']) // 3]
+                await pg.evaluate("(function(a){__uib.build(a[0],a[1],'archer');})", lc); await shot('build')
+                await pg.evaluate("(function(a){__uib.build(a[0],a[1],'warship');})", wc); await shot('water')
+                await pg.evaluate("""(function(a){var g=__td.G(), t=__td.build('archer',a[0],a[1]); t.lvl=3; var ds=[[1,0],[-1,0],[0,1],[0,-1]]; for (var i=0;i<ds.length;i++){ var c=t.c+ds[i][0], r=t.r+ds[i][1], k=r*g.cols+c; if (c>=0&&r>=0&&c<g.cols&&r<g.rows&&g.kind[k]==='g'&&g.towerAt[k]<0&&!(g.obsAt[k]>=0&&g.obs[g.obsAt[k]].alive)) { var b=__td.build('ballista',c,r); b.lvl=5; b.br=1; break; } } __uib.re(); __uib.tower(t);})""", lc); await shot('branch')
+                await pg.evaluate("(function(){var g=__td.G(), t=g.towers[0]; t.lvl=5; t.br=0; __uib.re(); __uib.tower(t);})()"); await shot('fuse')
+                await pg.evaluate("""(function(){var g=__td.G(); __uib.close(); g.gold=4000; __td.bot(1); for (var i=0;i<60*40 && !g.over;i++) __td.step(1); var W=g.waves[g.wave]; if (W) { var k0=W.groups[0]; W.groups=[{type:'goblin',n:24},{type:'orc',n:12},{type:'wolf',n:9},{type:'knight',n:6},{type:'bat',n:15},{type:'fdBoat',n:4}].map(function(o){var q={}; for (var k in k0) q[k]=k0[k]; q.type=o.type; q.n=o.n; return q;}); } __uib.wave();})()""")
+                await pg.evaluate("if (__td.st().modal) __td.closeModal(); 1"); await shot('wave', 700)
+                print(sz, 'ch%d' % ch, info, '콘솔 오류:', errs[:4])
+                await ctx.close()
+        await b.close()
+asyncio.run(main())

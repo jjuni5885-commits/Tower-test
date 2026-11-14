@@ -1,0 +1,249 @@
+# 수익화([BM])와 재방문 기능 시험: python3 tools/metaflow.py [가로x세로]
+# 손가락 탭으로: 전투 처치 → 처음 처치 기록과 일일 임무 집계 → 도감 보석 +5(한 번만) → 임무 받기 → 상점(모자람, 사기, 장착, 화살 스킨)
+#   → 새로 고침 뒤 유지 → 광고 자리 5초 보상, 중간에 닫으면 보상 없음, 하루 5번 제한 → 날짜 바뀜(Date 흉내) → 패배 → 광고 이어하기 → 다시 지면 결과 창
+import sys, os, asyncio
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+RES = []
+def ok(name, cond, info=''):
+    RES.append((name, bool(cond)))
+    print(('통과 ' if cond else '실패 ') + name + ('  ' + str(info) if info != '' else ''))
+# 기기 날짜 흉내: localStorage '__dayShift'(일) 만큼 Date를 옮김 (새로 고침해도 유지)
+DATE_SHIM = r"""(() => { const RD = Date; const sh = () => { try { return (parseFloat(localStorage.getItem('__dayShift') || '0') || 0) * 864e5; } catch (e) { return 0; } };
+  function FD(...a) { if (!new.target) return new RD(RD.now() + sh()).toString(); return a.length ? new RD(...a) : new RD(RD.now() + sh()); }
+  FD.prototype = RD.prototype; FD.now = () => RD.now() + sh(); FD.parse = RD.parse; FD.UTC = RD.UTC; window.Date = FD; })();"""
+
+async def main():
+    W, H = 360, 640
+    if len(sys.argv) > 1 and 'x' in sys.argv[1]: W, H = map(int, sys.argv[1].split('x'))
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=3, is_mobile=True, has_touch=True)
+        await ctx.add_init_script(DATE_SHIM)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html')
+        await pg.wait_for_timeout(1300)
+        async def ev(js): return await pg.evaluate(js)
+        async def tap_el(sel, wait=450, idx=0):
+            r = await ev("""(function(){var e=document.querySelectorAll(%r)[%d]; if(!e) return null; var b=e.getBoundingClientRect();
+              if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({block:'center'}); b=e.getBoundingClientRect(); }
+              var x=b.left+b.width/2, y=b.top+b.height/2, t=document.elementFromPoint(x,y); return {x:x,y:y,hit:!!t&&(e===t||e.contains(t))};})()""" % (sel, idx))
+            if not r: ok('탭 대상 있음 ' + sel, False); return None
+            if not r['hit']: ok('탭 가려지지 않음 ' + sel, False)
+            await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(wait)
+            return r
+        def vis(id): return "(function(){var e=document.getElementById('%s'); return !!e && !e.classList.contains('hide') && getComputedStyle(e).display!=='none';})()" % id
+        async def gems(): return await ev("__meta.gems()")
+        async def cards():
+            n = 0
+            while n < 8 and await ev("__td.st().kind === 'pick'"):
+                await ev("var b=document.querySelector('#modal .pkc'); b && b.click(); 1"); await pg.wait_for_timeout(800); n += 1
+            while n < 8 and await ev("!!document.getElementById('bOk') && !document.getElementById('sModal').classList.contains('hide')"):
+                await tap_el('#bOk', 350); n += 1
+        async def wait_result(ms=6000):
+            t = 0
+            while t < ms:
+                await cards()
+                if await ev("__td.st().kind==='result'"): return True
+                await pg.wait_for_timeout(250); t += 250
+            return False
+        async def to_map():
+            if await ev(vis('sTitle')): await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1100)
+
+        # 0. 처음
+        ok('처음 보석 0, 타이틀 보석 칸 0', await gems() == 0 and await ev("document.querySelector('#sTitle .gemN').textContent") == '0')
+        await to_map()
+        ok('지도 보석 칸', await ev("document.querySelector('#mGem .gemN').textContent") == '0')
+        # 1. 전투: 처음 처치 기록, 일일 임무 집계 (오늘 임무를 처치, 웨이브, 승리로 정해 두고 시험)
+        await ev("var s=__td.SAVE(); s.daily={day:__meta.today(), ids:['kill','clear','win'], n:{}, got:{}};")
+        await ev("__td.start(0,'normal')"); await pg.wait_for_timeout(1300)
+        await ev("__td.G().gold=3000; __td.bot(1); for (var i=0;i<600 && !__td.G().over;i++) __td.step(60);")
+        await pg.wait_for_timeout(400)
+        won = await wait_result(7000)
+        st = await ev("(function(){var g=__td.G(); return {over:g.over, kills:g.stats.kills, wave:g.wave, N:g.N};})()")
+        d = await ev("__meta.daily()")
+        ok('전투 승리 → 결과 창', won and st['over'] == 1, st)
+        ok('처음 처치 기록(고블린, 오크)', await ev("(function(){var s=__td.SAVE().slain; return !!(s.goblin && s.orc);})()"), await ev("JSON.stringify(__td.SAVE().slain)"))
+        ok('임무 집계: 처치', d['n'].get('kill') == min(100, st['kills']), [d['n'], st['kills']])
+        ok('임무 집계: 웨이브 3번 막기', d['n'].get('clear') == 3, d['n'])
+        ok('임무 집계: 지역 1번 이기기', d['n'].get('win') == 1, d['n'])
+        await tap_el('#rMap', 1200)
+        ok('결과 → 지도', await ev(vis('sMap')) and not await ev(vis('sModal')))
+        ok('오늘 임무 빨간 점', await ev("!document.getElementById('questDot').classList.contains('hide')"))
+        ok('도감 빨간 점', await ev("!document.getElementById('codexDot').classList.contains('hide')"))
+        # 2. 도감 보상: 받을 것이 있으면 적 탭, 그 칸이 골라져 있음 → 보석 +5, 반짝, 한 번만
+        await tap_el('#bCodex', 600)
+        ok('도감이 적 탭과 보상 칸으로 열림', await ev("!!document.querySelector('.tab.on[data-t=\"enemy\"]') && !!document.querySelector('.ci.sel .cgem') && !!document.getElementById('cGem')"))
+        g0 = await gems()
+        await tap_el('#cGem', 150)
+        ok('도감 보석 +5', await gems() == g0 + 5, [g0, await gems()])
+        ok('반짝 연출', await ev("!!document.querySelector('.gburst')"))
+        await pg.wait_for_timeout(500)
+        ok('받은 칸은 다시 못 받음', await ev("!document.getElementById('cGem') && !document.querySelector('.ci.sel .cgem') && !!document.querySelector('.cgot')"))
+        await tap_el('.ci', 400, 0)   # 고블린 칸 다시 눌러 보기
+        sel_k = await ev("document.querySelector('.ci.sel').getAttribute('data-k')")
+        ok('같은 칸을 다시 눌러도 단추 없음', not await ev("!!document.getElementById('cGem')") or sel_k != 'goblin', sel_k)
+        await tap_el('.ci[data-k="orc"]', 400)
+        await tap_el('#cGem', 600)
+        ok('두 번째 적 보석 +5 (합 +10)', await gems() == g0 + 10)
+        ok('받을 도감 보상 없음', not await ev("__meta.codexAny()"))
+        await tap_el('#cClose', 500)
+        ok('도감 닫으면 도감 빨간 점 꺼짐', await ev("document.getElementById('codexDot').classList.contains('hide')"))
+        # 3. 임무 받기
+        await tap_el('#bQuest', 600)
+        nget = await ev("document.querySelectorAll('.qGet').length")
+        ndone = 2 + (1 if st['kills'] >= 100 else 0)
+        ok('끝낸 임무마다 받기 단추 (웨이브, 승리' + (', 처치' if ndone == 3 else '') + ')', nget == ndone, nget)
+        g1 = await gems()
+        await tap_el('.qGet', 500)
+        ok('임무 받기 보석 +10', await gems() == g1 + 10)
+        ok('받은 임무는 받음 표시', await ev("document.querySelectorAll('.qOk').length") == 1)
+        await pg.screenshot(path=OUT + 'mf_quest.png')
+        for i in range(ndone - 1): await tap_el('.qGet', 500)
+        ok('끝낸 임무를 모두 받음 (+10씩)', await gems() == g1 + 10 * ndone and await ev("document.querySelectorAll('.qGet').length") == 0, [g1, await gems()])
+        await tap_el('#qClose', 500)
+        ok('받을 것이 없으면 임무 빨간 점 꺼짐', await ev("document.getElementById('questDot').classList.contains('hide')"))
+        # 4. 상점: 모자람 → 사기(자동 장착) → 기본으로 장착 → 다시 딸기 → 화살 스킨
+        await tap_el('#bShop', 600)
+        await tap_el('.skc[data-id="berry"]', 400)
+        gb = await gems()
+        txt = await ev("document.getElementById('skDo').textContent")
+        ok('사기 단추에 가격이 분명히', '120' in txt and await ev("document.getElementById('skDo').classList.contains('mute')"), txt)
+        await tap_el('#skDo', 300)
+        ok('보석 모자라면 안 사짐', await gems() == gb and not await ev("__td.SAVE().owned.berry") and '모자랍니다' in await ev("document.getElementById('toast').textContent"))
+        await ev("__meta.gems(%d)" % (gb + 100))   # 시험용으로 보석 채우기 (120 이상)
+        await tap_el('.skc[data-id="berry"]', 400)
+        ok('보석이 넉넉하면 사기 단추가 분홍', await ev("document.getElementById('skDo').classList.contains('gold')"))
+        await tap_el('#skDo', 500)
+        s = await ev("__td.SAVE()")
+        ok('딸기 포탑 사기: 보석 -120, 보유, 장착', s['gems'] == gb + 100 - 120 and s['owned']['berry'] == 1 and s['skin']['tower'] == 'berry', [s['gems'], s['owned'], s['skin']])
+        ok('카드에 장착 중', '장착 중' in await ev("document.querySelector('.skc[data-id=\"berry\"] em').textContent"))
+        await tap_el('.skc[data-id="base"]', 400)
+        await tap_el('#skDo', 400)
+        ok('기본 탑으로 장착 바꾸기', await ev("__td.SAVE().skin.tower") == 'base')
+        await tap_el('.skc[data-id="berry"]', 400)
+        ok('산 스킨은 장착하기 단추', '장착하기' in await ev("document.getElementById('skDo').textContent"))
+        await tap_el('#skDo', 400)
+        ok('딸기 포탑 다시 장착 (보석 그대로)', await ev("__td.SAVE().skin.tower") == 'berry' and await gems() == gb - 20)
+        await tap_el('.tab[data-t="proj"]', 400)
+        await ev("__meta.gems(%d)" % (gb - 20 + 60))
+        await tap_el('.tab[data-t="proj"]', 400)
+        await tap_el('.skc[data-id="heart"]', 400)
+        await tap_el('#skDo', 500)
+        s = await ev("__td.SAVE()")
+        ok('하트 화살 사기와 장착 (보석 -60)', s['skin']['proj'] == 'heart' and s['owned']['heart'] == 1 and s['gems'] == gb - 20, [s['gems'], s['skin']])
+        await pg.screenshot(path=OUT + 'mf_shop.png')
+        # 5. 새로 고침해도 유지
+        before = await ev("JSON.stringify({g:__td.SAVE().gems, sk:__td.SAVE().skin, o:__td.SAVE().owned, c:__td.SAVE().codexGot, d:__td.SAVE().daily.got})")
+        await pg.reload(); await pg.wait_for_timeout(1400)
+        after = await ev("JSON.stringify({g:__td.SAVE().gems, sk:__td.SAVE().skin, o:__td.SAVE().owned, c:__td.SAVE().codexGot, d:__td.SAVE().daily.got})")
+        ok('새로 고침 뒤 보석, 스킨, 보상 기록 유지', before == after, after)
+        ok('타이틀 보석 칸 숫자', await ev("document.querySelector('#sTitle .gemN').textContent") == str(await gems()))
+        await to_map()
+        # 6. 광고 자리: 5초 뒤 보상, 중간에 닫으면 없음, 하루 5번
+        await tap_el('#bShop', 600)
+        g2 = await gems()
+        await tap_el('#adGem', 300)
+        ok('광고 자리 창(시제품이라고 적힘)', await ev(vis('adLayer')) and '광고 자리' in await ev("document.getElementById('adLayer').textContent") and '시제품' in await ev("document.getElementById('adLayer').textContent"))
+        await pg.wait_for_timeout(2000)
+        ok('5초 전에는 보상 없음', await gems() == g2 and await ev(vis('adLayer')))
+        await pg.wait_for_timeout(3300)
+        ok('5초 뒤 보석 +10, 창 닫힘', await gems() == g2 + 10 and not await ev(vis('adLayer')), [g2, await gems()])
+        ok('남은 횟수 4', await ev("__meta.adLeft()") == 4 and '4 / 5' in await ev("document.querySelector('.adLeft').textContent"))
+        await tap_el('#adGem', 1500)
+        await pg.screenshot(path=OUT + 'mf_ad.png')
+        await tap_el('#adX', 300)
+        ok('중간에 닫으면 보상 없음과 알림', await gems() == g2 + 10 and not await ev(vis('adLayer')) and '보상이 없습니다' in await ev("document.getElementById('toast').textContent") and await ev("__meta.adLeft()") == 4)
+        await ev("__td.SAVE().adGem.n = 4")
+        await tap_el('.tab[data-t="tower"]', 400)
+        await tap_el('#adGem', 300)
+        await pg.wait_for_timeout(5500)
+        ok('마지막 1번 보상', await gems() == g2 + 20 and await ev("__meta.adLeft()") == 0)
+        ok('다 쓰면 단추가 꺼지고 문구가 바뀜', await ev("document.getElementById('adGem').classList.contains('off')") and '다 받았습니다' in await ev("document.getElementById('adGem').textContent"))
+        await tap_el('#adGem', 400)
+        ok('하루 제한: 더 눌러도 광고 창 없음', not await ev(vis('adLayer')) and await gems() == g2 + 20)
+        await tap_el('#shClose', 500)
+        # 7. 날짜 바뀜(기기 날짜 +1일): 새 임무, 광고 횟수 다시 5
+        day0 = await ev("__meta.today()")
+        await ev("localStorage.setItem('__dayShift','1')")
+        day1 = await ev("__meta.today()")
+        await tap_el('#bQuest', 600)
+        d1 = await ev("__meta.daily()")
+        ok('날짜가 바뀌면 새 임무 3개, 진행 0', day1 != day0 and d1['day'] == day1 and len(d1['ids']) == 3 and not d1['n'] and not d1['got'] and await ev("document.querySelectorAll('.qOk').length") == 0, [day0, day1, d1])
+        ok('날짜가 바뀌면 광고 횟수 다시 5', await ev("__meta.adLeft()") == 5)
+        await ev("localStorage.setItem('__dayShift','2')")
+        d2 = await ev("__meta.daily()")
+        again = await ev("__td.SAVE().daily = {day:'', ids:[], n:{}, got:{}}; __meta.daily().ids")
+        ok('임무는 날짜로 정해짐 (같은 날 다시 뽑아도 같음)', again == d2['ids'] and d2['day'] != day1, [d2['day'], d2['ids'], again])
+        await tap_el('#qClose', 500)
+        # 7-2. 안드로이드 앱 광고(AdBridge) 흉내: show(reason, id) → 앱이 __adResult(id, true|false)
+        await ev("window.AdBridge = { show: function (r, id) { window.__adCall = [r, id]; setTimeout(function () { window.__adResult(id, window.__adOk); }, 400); } }; window.__adOk = true;")
+        await tap_el('#bShop', 600)
+        g3 = await gems()
+        await tap_el('#adGem', 150)
+        ok('AdBridge가 있으면 앱 광고를 부름 (시제품 창 대신 불러오는 중)', await ev("!!window.__adCall && window.__adCall[0]==='gems'") and '불러오는 중' in await ev("document.getElementById('adLayer').textContent"))
+        await pg.wait_for_timeout(700)
+        ok('앱이 보상 완료를 알리면 보석 +10', await gems() == g3 + 10 and not await ev(vis('adLayer')))
+        await ev("window.__adOk = false")
+        await tap_el('#adGem', 900)
+        ok('앱이 실패를 알리면 보상 없음과 알림', await gems() == g3 + 10 and '받지 못했습니다' in await ev("document.getElementById('toast').textContent"))
+        await ev("window.AdBridge.show = function (r, id) { window.__adCall = [r, id]; }")
+        await tap_el('#adGem', 300)
+        await tap_el('#adX', 300)
+        await ev("window.__adResult(window.__adCall[1], true)")
+        await pg.wait_for_timeout(200)
+        ok('취소한 뒤 늦게 온 결과는 무시', await gems() == g3 + 10 and not await ev(vis('adLayer')))
+        await ev("delete window.AdBridge")
+        # 7-3. 안드로이드 뒤로 가기: 광고 자리 창이 떠 있으면 그것부터 닫음(보상 없음)
+        await tap_el('#adGem', 800)
+        r = await ev("window.__appBack()")
+        ok('뒤로 가기는 광고 자리 창을 먼저 닫음 (보상 없음)', r == 'ok' and not await ev(vis('adLayer')) and await ev("__td.st().kind") == 'shop' and await gems() == g3 + 10)
+        await tap_el('#shClose', 500)
+        # 8. 패배 → 광고 이어하기 → 생명 3으로 이어짐 → 다시 지면 결과 창
+        await ev("__td.start(1,'normal')"); await pg.wait_for_timeout(1300)
+        await cards()
+        await ev("var g=__td.G(); g.lives=1; document.getElementById('bWave').click();")
+        for i in range(80):
+            await ev("for (var i=0;i<30 && !__td.G().over;i++) __td.step(10);")
+            await cards()
+            if await ev("__td.G().over"): break
+        lost = await wait_result(6000)
+        ok('패배 결과 창에 광고 이어하기 단추', lost and await ev("__td.G().over") == -1 and await ev("!!document.getElementById('rCont')"))
+        await pg.screenshot(path=OUT + 'mf_lose.png')
+        await tap_el('#rCont', 1500)
+        await tap_el('#adX', 400)
+        ok('이어하기 광고를 중간에 닫으면 그대로 패배 창', await ev("__td.G().over") == -1 and await ev("__td.st().kind") == 'result' and await ev("!!document.getElementById('rCont')"))
+        await tap_el('#rCont', 300)
+        await pg.wait_for_timeout(5600)
+        st2 = await ev("(function(){var g=__td.G(), s=__td.st(); return {over:g.over, lives:g.lives, rev:g.revives, modal:s.modal, paused:s.paused, t:g.t, en:g.enemies.length, hl:document.getElementById('hLife').textContent};})()")
+        ok('광고 뒤 생명 3으로 그 자리에서 이어짐 (창 닫힘, 일시 정지 아님)', st2['over'] == 0 and st2['lives'] == 3 and st2['rev'] == 1 and not st2['modal'] and not st2['paused'], st2)
+        await pg.wait_for_timeout(1500)
+        t2 = await ev("__td.G().t")
+        ok('전투 시간이 실제로 흐름', t2 > st2['t'] + 1.0, [st2['t'], t2])
+        ok('생명 칸 3', await ev("document.getElementById('hLife').textContent") == '3' or await ev("__td.G().lives") < 3)
+        await pg.screenshot(path=OUT + 'mf_cont.png')
+        for i in range(120):
+            await ev("for (var i=0;i<30 && !__td.G().over;i++) __td.step(10); var g=__td.G(); if (!g.over && !g.waiting && g.wave<g.N && (g.nextT<=0)) document.getElementById('bWave').click();")
+            await cards()
+            if await ev("__td.G().over"): break
+        lost2 = await wait_result(6000)
+        ok('다시 지면 결과 창, 이어하기 단추 없음 (한 판에 한 번)', lost2 and await ev("__td.G().over") == -1 and not await ev("!!document.getElementById('rCont')") and await ev("!!document.getElementById('rMap')"))
+        await tap_el('#rMap', 1000)
+        ok('지도로', await ev(vis('sMap')))
+        # 9. 진행 기록 지우기: 진행은 지워지고 보석, 산 스킨, 받은 보상 기록은 남음
+        keep = await ev("JSON.stringify({g:__td.SAVE().gems, sk:__td.SAVE().skin, o:__td.SAVE().owned, c:__td.SAVE().codexGot})")
+        await tap_el('#bSet', 600)
+        await tap_el('#sReset', 300)
+        ok('지우기 확인 문구에 남는 것을 밝힘', '보석과 스킨은 남음' in await ev("document.getElementById('sReset').textContent"))
+        await tap_el('#sReset', 1200)
+        ok('진행 기록 지우기 뒤 보석, 스킨, 보상 기록 유지', await ev("__td.SAVE().prog") == 0 and await ev("JSON.stringify({g:__td.SAVE().gems, sk:__td.SAVE().skin, o:__td.SAVE().owned, c:__td.SAVE().codexGot})") == keep, keep)
+        print('콘솔 오류:', errs[:10])
+        ok('콘솔 오류 0', not errs, errs[:3])
+        bad = [n for n, c in RES if not c]
+        print('결과: %d/%d 통과' % (len(RES) - len(bad), len(RES)), '실패:', bad)
+        await b.close()
+asyncio.run(main())

@@ -1,0 +1,54 @@
+# v4.3 확인용: 글꼴(타이틀, 지도, 창, 이야기, 전투 글자)과 금화 모으기 화면
+# python3 tools/v43shot.py [폭x높이]
+import sys, asyncio
+from playwright.async_api import async_playwright
+import os
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+W, H = (map(int, sys.argv[1].split('x')) if len(sys.argv) > 1 else (390, 844))
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, has_touch=True, is_mobile=True)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1500)
+        await pg.screenshot(path=OUT + 'v43_title.png')
+        await pg.touchscreen.tap(W // 2, H // 2); await pg.wait_for_timeout(900)
+        await pg.screenshot(path=OUT + 'v43_map.png')
+        # 1번 노드 창
+        box = await pg.evaluate("(function(){var n=document.querySelector('.node'); var r=n.querySelector('.nb').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];})()")
+        await pg.touchscreen.tap(box[0], box[1]); await pg.wait_for_timeout(600)
+        await pg.screenshot(path=OUT + 'v43_modal.png')
+        # 출전 → 이야기
+        g = await pg.evaluate("(function(){var r=document.getElementById('bGo').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];})()")
+        await pg.touchscreen.tap(g[0], g[1]); await pg.wait_for_timeout(1400)
+        await pg.screenshot(path=OUT + 'v43_story.png')
+        await pg.evaluate("document.getElementById('stSkip').click()"); await pg.wait_for_timeout(800)
+        await pg.evaluate("__td.closeModal()"); await pg.wait_for_timeout(300)
+        await pg.screenshot(path=OUT + 'v43_battle0.png')
+        # 금화 모으기: 4번 지역, 봇, 3배속
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1")
+        await pg.evaluate("__td.start(3, 'normal')"); await pg.wait_for_timeout(1500)
+        await pg.evaluate("var g=__td.G(); g.gold += 900; __td.bot(1); __td.speed(2)")
+        await pg.wait_for_timeout(15000)
+        shots = 0
+        for k in range(60):
+            st = await pg.evaluate("__td.st()")
+            if st['coins'] >= 3:
+                await pg.screenshot(path=OUT + 'v43_coins%d.png' % shots); shots += 1
+                print('coins', st['coins'], 'pend', st['pend'], 'hGold', st['hGold'], 'gold', await pg.evaluate("__td.G().gold"))
+                if shots >= 4: break
+                await pg.wait_for_timeout(260)
+            else:
+                await pg.wait_for_timeout(120)
+        # 탑 칸 열기(트레이)
+        await pg.evaluate("__td.bot(0)"); await pg.wait_for_timeout(200)
+        await pg.screenshot(path=OUT + 'v43_battle1.png')
+        await pg.evaluate("document.getElementById('bPause').click()"); await pg.wait_for_timeout(500)
+        await pg.screenshot(path=OUT + 'v43_pause.png')
+        print('errors', len(errs)); [print(e) for e in errs[:10]]
+        await b.close()
+asyncio.run(main())

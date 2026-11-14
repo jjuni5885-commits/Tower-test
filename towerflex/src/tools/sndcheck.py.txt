@@ -1,0 +1,122 @@
+# 소리 검사: python3 tools/sndcheck.py [quick]
+# 1) 새 효과음 전부를 묶음별로 오프라인 녹음 → 길이, 꼭대기 값(클리핑 없음), 무음 아님, 시작 지연, 끝이 조용한지
+# 2) 곡 전부 녹음 → 길이, 꼭대기 값, 평균 세기, 녹음 시간   3) 챕터별 곡 고르기와 곡 전환   4) 가짜 사건 → 소리, 동시 발음 제한   5) 콘솔 오류 0
+import sys, asyncio, os, json
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+QUICK = 'quick' in sys.argv
+SWELL = ('jet', 'mslFly', 'bomber', 'ghost')   # 다가오는 소리는 서서히 커짐
+async def until(pg, js, ms=45000):   # 기계가 바쁘면 곡 녹음이 10초를 넘기도 함
+    for i in range(ms // 150):
+        if await pg.evaluate(js): return True
+        await pg.wait_for_timeout(150)
+    return False
+async def main():
+    bad = []
+    def chk(ok, msg):
+        if not ok: bad.append(msg)
+        print(('  ok  ' if ok else '  실패 ') + msg)
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        ctx = await b.new_context(viewport={'width': 360, 'height': 640}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1500)
+        await until(pg, '__snd.ready()', 60000)
+        await pg.evaluate('__snd.unlock()'); await pg.wait_for_timeout(300)
+        print('소리 장치:', await pg.evaluate('__snd.unlock()'))
+        if 'bench' in sys.argv:
+            # 곡 녹음 시간 견주기: 같은 자리에서 차례로 3번씩 녹음해 가장 빠른 값. 옛 1장 전투 곡(battle1)을 1로 본 배수
+            best = {}
+            for rnd in range(3):
+                for n in ['battle1', 'title', 'battle2', 'battle3', 'battle4', 'boss1', 'boss2', 'boss3', 'boss4']:
+                    real = {'battle1': 'battle', 'boss1': 'boss'}.get(n, n)
+                    await pg.evaluate("__snd.drop('%s')" % real)
+                    st = await pg.evaluate("__snd.song('%s')" % real)
+                    best[n] = min(best.get(n, 1e9), st['ms'])
+            print('곡 녹음 시간(ms, 3번 중 가장 빠름):', json.dumps(best))
+            print('1장 전투 곡 대비 배수:', ' '.join('%s %.1f' % (k, v / best['battle1']) for k, v in best.items()))
+            await b.close(); return
+        # --- 1) 효과음 ---
+        ms = await pg.evaluate("(async function(){ var t=performance.now(); await __snd.warm('all'); return Math.round(performance.now()-t); })()")
+        st = await pg.evaluate("__snd.stats()"); keys = await pg.evaluate("__snd.keys()"); live = await pg.evaluate("__snd.live()")
+        print('새 효과음 %d개, 전부 녹음 %dms, 묶음별 ms %s' % (len(keys), ms, json.dumps(live['ms'])))
+        chk(len(st) == len(keys), '새 효과음이 전부 녹음됨 (%d/%d)' % (len(st), len(keys)))
+        print('  %-12s %-6s %5s %6s %7s %6s %6s %6s %6s' % ('이름', '묶음', '길이', '꼭대기', '평균', '시작', '쓰임', '끝', '영교차'))
+        for s in sorted(st, key=lambda s: (s['grp'], s['k'])):
+            print('  %-12s %-6s %5.2f %6.3f %7.4f %6.3f %6.2f %6.4f %6d' % (s['k'], s['grp'], s['dur'], s['peak'], s['rms'], s['lead'], s['used'], s['end'], s['zc']))
+            if s['nan'] or s['peak'] > 0.98: bad.append('클리핑 또는 NaN: ' + s['k'])
+            if s['peak'] < 0.3 or s['rms'] < 0.01: bad.append('너무 작거나 무음: ' + s['k'])
+            if s['lead'] < 0 or s['lead'] > (0.16 if s['k'] in SWELL else 0.06): bad.append('시작이 늦음: %s %.3f' % (s['k'], s['lead']))
+            if s['end'] > 0.03: bad.append('끝이 잘림: %s %.4f' % (s['k'], s['end']))
+            if abs(s['dc']) > 0.04: bad.append('직류 치우침: ' + s['k'])
+        chk(not [x for x in bad if not x.startswith('새')], '효과음: 클리핑 없음, 무음 아님, 시작 지연 0.06초 이하, 끝이 조용함')
+        old = await pg.evaluate("__snd.stats(1).filter(function(s){return s.grp==='old';})")
+        chk(len(old) >= 71 and all(s['peak'] > 0.02 for s in old), '옛 효과음 %d개 그대로 녹음됨' % len(old))
+        if '-v' in sys.argv:
+            for s in old: print('   old %-10s 꼭대기 %.3f 평균 %.4f' % (s['k'], s['peak'], s['rms']))
+        # --- 2) 곡 ---
+        names = [n for n in await pg.evaluate("__snd.songs()") if n != 'menu1']
+        if QUICK: names = ['title', 'battle4']
+        for n in names:
+            s = await pg.evaluate("__snd.song('%s')" % n)
+            ok = bool(s) and s['dur'] > 25 and 0.3 < s['peak'] <= 0.93 and s['rms'] > 0.03
+            chk(ok, '곡 %-8s %s' % (n, json.dumps(s)))
+        mus = await pg.evaluate("__snd.mus()")
+        chk(len(mus['have']) <= 6, '곡 녹음은 최근 것만 쥠 (%d곡: %s)' % (len(mus['have']), ' '.join(mus['have'])))
+        # --- 3) 곡 고르기와 전환 ---
+        await pg.evaluate("__td.SAVE().tut.done=1; __td.SAVE().set.music=true; __td.SAVE().set.sfx=true; __td.unlockAll(); __td.ownAll();")
+        picks = await pg.evaluate("""(function(){ var o={}, M=__td.MAPS; var G0={M:{ch:1}}; ['menu','battle','boss','battle3','victory'].forEach(function(n){ o[n]=__snd.pick(n); }); o.ch=__snd.ch(); return o; })()""")
+        chk(picks['menu'] == 'title' and picks['battle3'] == 'battle3', '곡 이름 바꾸기: menu → %s, battle → %s (지금 챕터 %s)' % (picks['menu'], picks['battle'], picks['ch']))
+        await pg.evaluate("__td.start(0,'normal')"); await until(pg, "(function(){var m=__snd.mus(); return m.cur==='battle' && m.paused===false && m.t>0.2;})()")
+        m1 = await pg.evaluate("__snd.mus()")
+        chk(m1['cur'] == 'battle' and m1['paused'] is False, '1장 판 시작 → battle 재생 (%s, 멈춤 %s)' % (m1['cur'], m1['paused']))
+        res = {}
+        for ch in (2, 3, 4):
+            await pg.evaluate("(function(){ var g=__td.G(); g.M=Object.assign({}, g.M, {ch:%d}); })()" % ch)
+            await pg.evaluate("__snd.playM('battle')"); await until(pg, "(function(){var m=__snd.mus(); return m.cur==='battle%d' && m.paused===false && m.t>0.3;})()" % ch)
+            a = await pg.evaluate("__snd.mus()")
+            await pg.evaluate("__snd.playM('boss')"); await until(pg, "(function(){var m=__snd.mus(); return m.cur==='boss%d' && m.paused===false && m.t>0.3;})()" % ch)
+            c = await pg.evaluate("__snd.mus()")
+            chk(a['cur'] == 'battle%d' % ch and a['paused'] is False and (a['t'] or 0) > 0.2 and c['cur'] == 'boss%d' % ch and c['paused'] is False and (c['t'] or 0) > 0.2, '%d장: battle → %s (재생 중 %s), boss → %s (재생 중 %s)' % (ch, a['cur'], not a['paused'], c['cur'], not c['paused']))
+        await pg.evaluate("__snd.playM('battle'); __snd.playM('boss'); __snd.playM('battle')"); await until(pg, "(function(){var m=__snd.mus(); return m.cur==='battle4' && m.paused===false && m.vol>0.5 && m.t>0.2;})()")
+        a = await pg.evaluate("__snd.mus()")
+        chk(a['cur'] == 'battle4' and a['paused'] is False and a['vol'] > 0.5, '빠르게 연달아 바꿔도 마지막 곡이 제 크기로 재생 (%s, 크기 %.2f)' % (a['cur'], a['vol']))
+        await pg.evaluate("__snd.playM('victory')"); await pg.wait_for_timeout(300)
+        a = await pg.evaluate("__snd.mus()")
+        chk(a['cur'] is None and a['paused'] is True, '승리 징글 때 음악 멈춤')
+        # --- 4) 가짜 사건 → 소리 ---
+        await pg.evaluate("(function(){ var g=__td.G(); g.M=Object.assign({}, g.M, {ch:1}); __snd.log('clear'); __snd.log(true); })()")
+        evs = [('muzzle', "{tw:{k:'flak',lvl:1}, n:1}", 'flak'), ('muzzle', "{tw:{k:'x',lvl:3,st:{kind:'gatling'}}, n:1}", 'gat'), ('muzzle', "{tw:{k:'rocket',lvl:5}, n:6}", 'rktSalvo'), ('launch', "{tw:{k:'sam',lvl:2}}", 'mslFire'),
+               ('tracer', "{x0:1,y0:1,x1:3,y1:3,k:'snipe'}", 'snp'), ('chain', "{pts:[[1,1],[2,2]]}", 'tesla'), ('beamOn', "{}", 'laser'), ('blast', "{x:5,y:8,r:1.4,k:'he'}", 'blastHe'), ('blast', "{x:5,y:8,r:0.5,k:'he'}", 'blastS'),
+               ('blast', "{x:5,y:8,r:1,k:'fire'}", 'blastFire'), ('blast', "{x:5,y:8,r:0.6,k:'flak'}", 'flakPop'), ('blast', "{x:5,y:8,r:1,k:'emp'}", 'blastEmp'), ('blast', "{x:5,y:8,r:1,k:'ice'}", 'ice'), ('blast', "{x:5,y:8,r:1,k:'holy'}", 'blastHoly'),
+               ('blast', "{x:5,y:8,r:1,k:'water'}", 'splash2'), ('blast', "{x:5,y:8,r:1,k:'dark'}", 'blastDark'), ('transform', "{lvl:4,br:0,ult:0}", 'transform'), ('transform', "{lvl:6,br:1,ult:1}", 'transformU'), ('fuse', "{}", 'fuse'),
+               ('planeOut', "{}", 'jet'), ('towerStun', "{sec:2,why:'hex'}", 'curse'), ('towerStun', "{sec:2,why:'charm'}", 'charm'), ('towerStun', "{sec:2,why:'shell'}", 'stun'), ('morph', "{to:'vampbat'}", 'morph'),
+               ('ruleEv', "{id:'meteor'}", 'meteor'), ('ruleEv', "{id:'blackout'}", 'powerDown'), ('ruleEv', "{id:'airraid'}", 'alarm'), ('kill', "{k:'tank',dom:'g'}", 'blastS'), ('muzzle', "{tw:{k:'warship',lvl:1}}", 'navgun'),
+               ('muzzle', "{tw:{k:'turtle',lvl:1}}", 'ball'), ('muzzle', "{tw:{k:'singijeon',lvl:1}, n:5}", 'sinSalvo'), ('muzzle', "{tw:{k:'jangseung',lvl:1}}", 'drum'), ('muzzle', "{tw:{k:'shrine',lvl:1}}", 'talisman'), ('muzzle', "{tw:{k:'barracks',lvl:1}}", 'sword'),
+               ('muzzle', "{tw:{k:'sniper',lvl:1}}", 'snp'), ('muzzle', "{tw:{k:'tesla',lvl:1}}", 'tesla')]
+        miss = []
+        for name, obj, want in evs:
+            await pg.evaluate("__snd.log('clear'); __snd.ev('%s', %s)" % (name, obj)); await pg.wait_for_timeout(420 if want in ('snp', 'tesla', 'laser', 'blastS', 'alarm', 'jet') else 140)
+            got = [x[0] for x in await pg.evaluate("__snd.log()")]
+            if want not in got: miss.append('%s%s → %s (실제 %s)' % (name, obj, want, got))
+        chk(not miss, '가짜 사건 %d개가 맞는 소리를 울림 %s' % (len(evs), miss[:6]))
+        # 기관포 연사: 1초에 60번 사건 → 실제 발음은 간격 제한만큼, 동시 발음 3 이하
+        r = await pg.evaluate("""(async function(){ __snd.log('clear'); var mx=0, mxAll=0; for (var i=0;i<60;i++){ __snd.ev('muzzle',{tw:{k:'gatling',lvl:1},n:1}); __snd.ev('muzzle',{tw:{k:'flak',lvl:1},n:1}); __snd.ev('blast',{r:0.6,k:'flak'}); var L=__snd.live(); mx=Math.max(mx, L.vox.gat||0, L.vox.flak||0, L.vox.flakPop||0); mxAll=Math.max(mxAll, L.live); await new Promise(function(r){setTimeout(r,16);}); } var l=__snd.log(), c={}; l.forEach(function(x){c[x[0]]=(c[x[0]]||0)+1;}); return {mx:mx, mxAll:mxAll, c:c, ms: l.length ? l[l.length-1][2]-l[0][2] : 0}; })()""")
+        cap = lambda gap: r['ms'] / gap + 2   # 최소 간격으로 낼 수 있는 가장 많은 횟수
+        chk(r['mx'] <= 3 and 6 <= r['c'].get('gat', 0) <= cap(58) and r['c'].get('flak', 0) <= cap(70) and r['c'].get('flakPop', 0) <= cap(85) and r['mxAll'] <= 14, '연사 %.1f초(사건 180개): 같은 소리 동시 발음 %d (3 이하), 새 소리 전체 %d (14 이하), 실제 발음 %s' % (r['ms'] / 1000, r['mx'], r['mxAll'], json.dumps(r['c'])))
+        # 변신: upgrade(4단계) + transform 이 같이 와도 징글은 한 번, 옛 강화음은 막힘
+        r = await pg.evaluate("""(async function(){ __snd.log('clear'); await new Promise(function(r){setTimeout(r,900);}); var g=__td.G(); g.ev.push({t:'upgrade', x:3, y:3, k:'archer', lvl:4, br:0, tw:g.towers[0]||{k:'archer',lvl:4,br:0,x:3,y:3}}); g.ev.push({t:'transform', tw:null, lvl:4, br:0, ult:0, x:3, y:3, k:'archer'}); await new Promise(function(r){setTimeout(r,400);}); return __snd.log().map(function(x){return x[0];}); })()""")
+        chk(r.count('transform') == 1 and 'upgradeBig' not in r, '실제 rdEvents 경로: 4단계 강화 + 변신 → %s' % r)
+        # 안전망: 사건 없이 생긴 탄(적 포탄)과 새 적(순항 미사일)
+        r = await pg.evaluate("""(async function(){ __snd.log('clear'); __snd.tick(); var g=__td.G(); g.proj.push({kind:'eshell', x:3, y:3, t:0, tgt:null, dead:1}); g.enemies.push({k:'missile', x:-5, y:-5, dead:1, hp:0}); __snd.tick(); await new Promise(function(r){setTimeout(r,200);}); return __snd.log().map(function(x){return x[0];}); })()""")
+        chk('tankGun' in r and 'alarm' in r, '안전망(사건 없는 적 포탄, 순항 미사일 등장): %s' % r)
+        await pg.wait_for_timeout(500)
+        print('콘솔 오류:', errs[:8])
+        chk(not errs, '콘솔 오류 0')
+        await b.close()
+    print('\n결과:', '전부 통과' if not bad else '실패 %d건' % len(bad))
+    for x in bad: print('  -', x)
+    sys.exit(1 if bad else 0)
+asyncio.run(main())

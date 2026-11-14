@@ -1,0 +1,53 @@
+# XTRA 보너스 게임 캡처(다듬기용): python3 tools/xbshot.py [가로x세로] [칸 id,...]  → shots/xb_<크기>_<칸>_<장면>.png
+# 장면: intro 안내, play 놀이 중(흉내 손가락으로 몇 초), end 결과. list 목록, fab 지도 단추
+import sys, os, asyncio
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    W, H = 360, 640
+    if len(sys.argv) > 1 and 'x' in sys.argv[1]: W, H = map(int, sys.argv[1].split('x'))
+    ids = sys.argv[2].split(',') if len(sys.argv) > 2 else ['c1b1', 'c1b2', 'c1b3', 'c2b2', 'c3b1', 'c4b2']
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1200)
+        async def shot(n): await pg.screenshot(path=OUT + 'xb_%dx%d_%s.png' % (W, H, n)); print('shot', n)
+        await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1300)
+        await shot('fab')
+        await pg.evaluate("__bn.list()"); await pg.wait_for_timeout(500); await shot('list'); await pg.evaluate("__td.closeModal()")
+        await pg.evaluate("__adm.on(1)")
+        for id in ids:
+            await pg.evaluate("__bn.open('%s')" % id); await pg.wait_for_timeout(500); await shot(id + '_intro')
+            await pg.touchscreen.tap(*(await pg.evaluate("(function(){var r=document.getElementById('bnGo').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];})()")))
+            await pg.wait_for_timeout(600); await shot(id + '_ready'); await pg.wait_for_timeout(700)
+            t = 0
+            while t < 5200:
+                st = await pg.evaluate("__bn.st()")
+                if st.get('kind') == 'gallery':
+                    c = [q for q in st['tg'] if q['k'] != 'b' and 30 < q['x'] < W - 30 and q['y'] < H - 40]
+                    if c: q = c[-1]; await pg.touchscreen.tap(q['x'] + q['vx'] * 0.06, q['y'] + q['vy'] * 0.06)
+                elif st.get('kind') == 'catch':
+                    c = [q for q in st['it'] if q['k'] != 'b']
+                    if c:
+                        q = max(c, key=lambda v: v['y']); await pg.touchscreen.tap(q['x'], H - 120)
+                elif st.get('kind') == 'memory' and st.get('peek', 0) <= 0:
+                    dn = [q for q in st['cards'] if not q['up'] and not q['done']]
+                    if dn:
+                        up = [q for q in st['cards'] if q['up'] and not q['done']]
+                        pick = dn[0]
+                        if len(up) == 1 and t % 900 < 500:
+                            m = [q for q in dn if q['p'] == up[0]['p']]
+                            if m: pick = m[0]
+                        await pg.touchscreen.tap(pick['x'], pick['y'])
+                await pg.wait_for_timeout(230); t += 260
+                if 2300 < t < 2600: await shot(id + '_play')
+            await shot(id + '_play2')
+            await pg.evaluate("__bn.left(0.4)"); await pg.wait_for_timeout(2600); await shot(id + '_end')
+            await pg.evaluate("__bn.close()"); await pg.wait_for_timeout(200)
+        print('errors', errs)
+        await b.close()
+asyncio.run(main())

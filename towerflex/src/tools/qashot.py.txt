@@ -1,0 +1,73 @@
+# QA 둘러보기 캡처: python3 tools/qashot.py [가로x세로] [part,...]  → shots/qa_<크기>_<이름>.png
+# part: menu(타이틀, 챕터 고르기, 지도 4장, 판 창 4장, 편성, 탑 상세, 소환, 도감, 상점, 임무, 설정, 관리자), battle(장마다 전투, 땅/하늘/바다/밤), bonus(보너스 3종)
+import asyncio, sys, os, json
+from playwright.async_api import async_playwright
+SZ = sys.argv[1] if len(sys.argv) > 1 else '360x640'
+W, H = map(int, SZ.split('x'))
+PARTS = (sys.argv[2] if len(sys.argv) > 2 else 'menu,battle,bonus').split(',')
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); OUT = ROOT + '/shots/qa_%s_' % SZ
+os.makedirs(ROOT + '/shots', exist_ok=True)
+
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)[:200]))
+        pg.on('console', lambda m: errs.append('console:' + m.text[:200]) if m.type == 'error' else None)
+        async def ev(js): return await pg.evaluate(js)
+        async def shot(n, w=600): await pg.wait_for_timeout(w); await pg.screenshot(path=OUT + n + '.png')
+        async def mi(sid): return await ev("__td.MAPS.findIndex(function(m){return m.id==='%s'})" % sid)
+        async def close(): await ev("__td.closeModal()")
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(2000)
+        if 'menu' in PARTS:
+            await shot('title', 300)
+            await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1200)
+            if await ev("!document.getElementById('story').classList.contains('hide')"): await ev("document.getElementById('stSkip').click()")
+            await shot('chsel_new')
+        await ev("__td.unlockAll(); __td.ownAll(); var s=__td.SAVE(); s.story=s.story||{}; ['c1in','c2in','c3in','c4in'].forEach(function(k){s.story[k]=1}); s.towers.warship={n:1,star:2}; s.towers.sam={n:1,star:1};")
+        if 'menu' in PARTS:
+            await ev("__ch.sel()"); await shot('chsel')
+            for ch in [1, 2, 3, 4]:
+                await ev("__ch.map(%d)" % ch); await shot('map%d' % ch, 900)
+                sid = ['c1s04', 'c2s03', 'c3s10', 'c4s12'][ch - 1]
+                await ev("__ch.stage(%d)" % await mi(sid)); await shot('stage%d' % ch, 900)
+                if ch == 3:
+                    await ev("document.getElementById('stLo').click()"); await shot('lo', 700)
+                    await ev("var e=document.querySelector('.loT[data-k=\"sam\"]'); e&&e.click()"); await pg.wait_for_timeout(200)
+                    await ev("var d=document.getElementById('loDet'); d&&d.click()"); await shot('twd', 700)
+                await close()
+            await ev("__ch.map(3)"); await pg.wait_for_timeout(500)
+            for bid, nm in [('bGacha', 'gacha'), ('bQuest', 'quest'), ('bShop', 'shop'), ('bSet', 'settings')]:
+                await ev("document.getElementById('%s').click()" % bid); await shot(nm, 700); await close()
+            await ev("__ch.codex('enemy', null, 3)"); await shot('codex_enemy3', 700); await close()
+            await ev("__ch.codex('tower', 'sam')"); await shot('codex_tower', 700); await close()
+            await ev("__adm.on(1); __adm.open()"); await shot('admin', 700); await close()
+            await ev("__ch.map(4)"); await shot('map4_adm', 700)
+        if 'battle' in PARTS:
+            for sid, steps in [('c1s06', 50), ('c1s10', 60), ('c2s03', 50), ('c2s12', 70), ('c3s10', 60), ('c3s05', 50), ('c4s03', 50), ('c4s12', 80)]:
+                m = await mi(sid)
+                await ev("__td.start(%d,'normal')" % m); await pg.wait_for_timeout(1000)
+                for i in range(6):
+                    if await ev("__td.st().modal || __td.st().story"):
+                        await ev("__td.closeModal(); var s=document.getElementById('stSkip'); if (!document.getElementById('story').classList.contains('hide')) s.click();"); await pg.wait_for_timeout(300)
+                await ev("__td.G().gold += 6000; __td.bot(2)")
+                for i in range(steps):
+                    await ev("__td.step(30)")
+                    if await ev("__td.st().modal"): await close()
+                    if await ev("__td.G().over"): break
+                await close(); await pg.wait_for_timeout(700)
+                await shot('battle_' + sid, 200)
+                print(sid, await ev("JSON.stringify({w:__td.G().wave, over:__td.G().over, n:__td.G().towers.length, top:Math.max.apply(null,__td.G().towers.map(function(t){return t.lvl}).concat([0])), e:__td.G().enemies.length})"))
+            # 결과 창
+            await ev("var g=__td.G(); g.over=1; g.ev.push({t:'win'});"); await pg.wait_for_timeout(2600); await shot('result', 300)
+            await ev("var l=document.getElementById('rwLayer'); l&&l.remove(); __td.closeModal()")
+        if 'bonus' in PARTS:
+            await ev("__td.closeModal(); __ch.map(2)"); await pg.wait_for_timeout(500)
+            for bid in ['c2b1', 'c3b2', 'c4b3']:
+                await ev("__bn.open('%s')" % bid); await shot('bonus_%s_card' % bid, 800)
+                await ev("var s=document.querySelector('#bnCard .btn.gold, #bnGo'); s&&s.click()"); await shot('bonus_%s_play' % bid, 2500)
+                await ev("__bn.close()"); await pg.wait_for_timeout(300)
+        print('errors', len(errs)); [print(' ', e) for e in errs[:12]]
+        await b.close()
+asyncio.run(main())

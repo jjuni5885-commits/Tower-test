@@ -1,0 +1,112 @@
+# EN3 그림판: python3 tools/en3_board.py [big,small,frames,rot,line,battle,perf,hash] (기본 전부, 결과는 /tmp/en3/*.png)
+# 빌드한 out/index.html에 시험용 고리(__EF 등)를 끼운 사본(/tmp/en3/test.html)을 만들어 씀. 원본 소스는 안 건드림
+import sys, os, asyncio, base64, json
+from playwright.async_api import async_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = '/tmp/en3'
+K3 = ['soldier', 'biker', 'jeep', 'apc', 'tank', 'mech', 'truck', 'drone', 'heli', 'jet', 'bomber', 'missile', 'boat', 'destroyer', 'submarine', 'submarine_sub', 'bigtank', 'fortress', 'carrier', 'titan']
+OLD = ['goblin', 'orc', 'wolf', 'knight', 'bat', 'stalker', 'shaman', 'spider', 'skeleton', 'troll', 'golemL', 'golemM', 'golemS', 'wyvern', 'wraith', 'wagon', 'warlock', 'iceslime', 'ember', 'mirror', 'bunny', 'guard', 'grumsh', 'arachne', 'yotun', 'barkan', 'twinking']
+def mk_test():
+    h = open(ROOT + '/out/index.html', encoding='utf8').read()
+    hook = "\nwindow.__EF = enemyFrames; window.__ESPR = EN_SPR; window.__ED = EN_DRAW; window.__EI = enemyIcon; window.__SP = function (k, pi, d, ex) { return spawnEnemy(G, k, pi, d, ex); };\n"
+    i = h.rfind('\n})();')
+    h = h[:i] + hook + h[i:]
+    a = "var top = e.k === 'spider' || e.k === 'arachne';"
+    assert a in h
+    h = h.replace(a, "var top = !!(EN_DRAW[e.k] && EN_DRAW[e.k].top);")
+    open(OUT + '/test.html', 'w', encoding='utf8').write(h)
+JS = r"""
+(function(){
+  var BG = { g: ['#70757c', '#d9c08c'], a: ['#8fb86a', '#70757c'], s: ['#3f84b5', '#2f6f9e'] };
+  function dom(k){ var E = __td.EN[k]; return E ? (E.dom || (E.fly ? 'a' : 'g')) : 's'; }
+  function img(u){ return new Promise(function(r){ var im = new Image(); im.onload = function(){ r(im); }; im.src = u; }); }
+  window.__B = {
+    icons: async function(keys, px, cols){
+      var rows = Math.ceil(keys.length / cols), c = document.createElement('canvas'); c.width = cols * px; c.height = rows * px; var x = c.getContext('2d');
+      for (var i = 0; i < keys.length; i++) { var k = keys[i], cx = (i % cols) * px, cy = Math.floor(i / cols) * px, b = BG[dom(k)];
+        x.fillStyle = b[0]; x.fillRect(cx, cy, px, px / 2); x.fillStyle = b[1]; x.fillRect(cx, cy + px / 2, px, px / 2);
+        x.strokeStyle = 'rgba(0,0,0,0.25)'; x.strokeRect(cx + 0.5, cy + 0.5, px - 1, px - 1);
+        var im = await img(__EI(k, px - 8)); x.drawImage(im, cx + 4, cy + 4); }
+      return c.toDataURL();
+    },
+    frames: function(keys, S, scale){
+      var all = keys.map(function(k){ return __EF(k, S); }), W = 0, Hh = 0, RY = [0];
+      all.forEach(function(fr){ var w = 0, h = 0; fr.fr.forEach(function(f){ w = Math.max(w, f.c.width); h = Math.max(h, f.c.height); }); fr._w = w + 6; fr._h = h + 6; W = Math.max(W, (fr.n + 1) * fr._w); RY.push(RY[RY.length - 1] + fr._h); });
+      var c = document.createElement('canvas'); c.width = W * scale; c.height = RY[RY.length - 1] * scale; var x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+      all.forEach(function(fr, r){ var b = BG[dom(keys[r])]; x.fillStyle = b[0]; x.fillRect(0, RY[r] * scale, c.width, fr._h * scale); x.fillStyle = b[1]; x.fillRect(c.width / 2, RY[r] * scale, c.width / 2, fr._h * scale);
+        for (var i = 0; i <= fr.n; i++) { var f = fr.fr[i % fr.n], w = fr.wh[0], mh = 0; fr.fr.forEach(function(q){ mh = Math.max(mh, q.ay); });
+          x.save(); x.scale(scale, scale); x.translate(i * fr._w + 3, RY[r] + 3 + (mh - f.ay));
+          // 기준점 x를 맞춰서 흔들림을 볼 수 있게
+          var mx = 0; fr.fr.forEach(function(q){ mx = Math.max(mx, q.ax); }); x.translate(mx - f.ax, 0);
+          x.drawImage(f.c, 0, 0); if (i === fr.n) { x.globalAlpha = 0.9; x.drawImage(w.c, 0, 0); } x.restore(); } });
+      return c.toDataURL();
+    },
+    rot: function(keys, S, scale){
+      var cell = S * 3.4, c = document.createElement('canvas'); c.width = 8 * cell * scale; c.height = keys.length * cell * scale; var x = c.getContext('2d');
+      keys.forEach(function(k, r){ var fr = __EF(k, S), b = BG[dom(k)]; x.fillStyle = b[0]; x.fillRect(0, r * cell * scale, c.width, cell * scale);
+        for (var i = 0; i < 8; i++) { var s = fr.fr[i % fr.n], X = (i + 0.5) * cell, Y = (r + 0.5) * cell, an = i * Math.PI / 4;
+          x.save(); x.scale(scale, scale); x.translate(X, Y); x.strokeStyle = 'rgba(255,255,255,0.35)'; x.beginPath(); x.arc(0, 0, S * 0.5, 0, 7); x.stroke();
+          x.rotate(an); x.drawImage(s.c, -s.ax, -s.ay * 0.75); x.restore();
+          x.fillStyle = '#ff0'; x.fillRect(X * scale - 1, Y * scale - 1, 2, 2); } });
+      return c.toDataURL();
+    },
+    line: function(keys, S, scale, bgs){
+      var frs = keys.map(function(k){ var fr = __EF(k, S); return { k: k, f: fr.fr[1 % fr.n], top: __ED[k] && __ED[k].top }; }), gap = S * 0.25, per = Math.ceil(keys.length / 3), rowH = S * 3.0;
+      var roww = [0, 0, 0]; frs.forEach(function(q, i){ roww[Math.floor(i / per)] += Math.max(q.f.c.width, q.f.c.height * (q.top ? 1 : 0)) + gap; });
+      var c = document.createElement('canvas'); c.width = (Math.max.apply(null, roww) + 20) * scale; c.height = rowH * 3 * scale; var x = c.getContext('2d'); x.scale(scale, scale);
+      for (var r = 0; r < 3; r++) { x.fillStyle = bgs[r % bgs.length]; x.fillRect(0, r * rowH, c.width, rowH); }
+      var cx = 10, row = -1;
+      frs.forEach(function(q, i){ var r = Math.floor(i / per); if (r !== row) { row = r; cx = 10; } var f = q.f, by = (r + 1) * rowH - S * 0.5;
+        if (q.top) { x.save(); x.translate(cx + f.ax, by - S * 0.9); x.drawImage(f.c, -f.ax, -f.ay * 0.75); x.restore(); }
+        else { x.fillStyle = 'rgba(10,8,20,0.3)'; x.beginPath(); x.ellipse(cx + f.ax, by, S * 0.4, S * 0.1, 0, 0, 7); x.fill(); x.drawImage(f.c, cx, by - f.ay); }
+        cx += f.c.width + gap; });
+      return c.toDataURL();
+    },
+    perf: function(keys){ var o = {}; keys.forEach(function(k){ var t = []; [36, 41, 67, 97].forEach(function(s){ var m = []; for (var r = 0; r < 7; r++) { delete __ESPR[k + ':' + s]; var t0 = performance.now(); __EF(k, s); m.push(performance.now() - t0); } m.sort(function(a, b){ return a - b; }); t.push(+m[0].toFixed(1) + '/' + m[3].toFixed(1)); }); o[k] = t; }); return o; }
+  };
+})()
+"""
+def save(d, name):
+    open(OUT + '/' + name, 'wb').write(base64.b64decode(d.split(',')[1])); print('saved', OUT + '/' + name)
+async def main():
+    modes = (sys.argv[1] if len(sys.argv) > 1 else 'big,small,frames,rot,line').split(',')
+    keys = sys.argv[2].split(',') if len(sys.argv) > 2 else K3
+    mk_test()
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 360, 'height': 640}, device_scale_factor=2)
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error', 'warning') else None)
+        await pg.goto('file://' + OUT + '/test.html'); await pg.wait_for_timeout(1200)
+        await pg.evaluate(JS)
+        tops = await pg.evaluate("(%s).filter(function(k){ return __ED[k] && __ED[k].top; })" % json.dumps(keys))
+        kj = json.dumps(keys)
+        if 'big' in modes: save(await pg.evaluate("__B.icons(%s, 138, 5)" % kj), 'big.png')
+        if 'huge' in modes: save(await pg.evaluate("__B.icons(%s, 300, 4)" % kj), 'huge.png')
+        if 'small' in modes: save(await pg.evaluate("__B.icons(%s, 48, 10)" % kj), 'small.png')
+        if 'frames' in modes:
+            half = (len(keys) + 1) // 2
+            save(await pg.evaluate("__B.frames(%s, 36, 2)" % json.dumps(keys[:half])), 'frames_a.png')
+            if keys[half:]: save(await pg.evaluate("__B.frames(%s, 36, 2)" % json.dumps(keys[half:])), 'frames_b.png')
+        if 'rot' in modes and tops: save(await pg.evaluate("__B.rot(%s, 36, 2)" % json.dumps(tops)), 'rot.png')
+        if 'line' in modes:
+            save(await pg.evaluate("__B.line(%s, 36, 2, ['#70757c', '#d9c08c', '#3f84b5'])" % json.dumps([k for k in keys if k != 'submarine_sub'] + ['goblin', 'knight', 'wolf', 'wagon', 'golemL', 'bat', 'wyvern', 'grumsh'])), 'line.png')
+        if 'perf' in modes:
+            r = await pg.evaluate("__B.perf(%s)" % kj)
+            for k, v in r.items(): print(k, v, 'SLOW' if max(float(q.split('/')[1]) for q in v) > 30 else '')  # 크기 36, 41, 67, 97에서 최소/중앙값(ms), 7번 반복
+        if 'stress' in modes:  # 아주 작은 크기부터 큰 크기까지 예외 없이 만들어지는지
+            r = await pg.evaluate("(function(keys){ var bad = []; keys.forEach(function(k){ [8, 12, 16, 24, 36, 45, 70, 130, 200].forEach(function(S){ try { var fr = __EF(k, S + 0.2); if (!fr.fr.length || fr.fr.length !== fr.wh.length || fr.fr.some(function(f){ return !f.c.width || !isFinite(f.ax) || !isFinite(f.ay); })) bad.push(k + ':' + S + ' frames'); if (__ED[k].top && !fr.icon) bad.push(k + ':' + S + ' icon'); } catch (e) { bad.push(k + ':' + S + ' ' + e.message); } }); [20, 40, 56, 130].forEach(function(px){ try { __EI(k, px); } catch (e) { bad.push(k + ' icon' + px + ' ' + e.message); } }); }); return bad; })(%s)" % kj)
+            print('stress bad', r)
+        if 'battle' in modes:
+            await pg.mouse.click(180, 320); await pg.wait_for_timeout(400)
+            mi = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+            await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.start(%d,'normal')" % mi)
+            await pg.wait_for_timeout(2500)
+            info = await pg.evaluate("""(function(list){ var g=__td.G(), d=%f; list.forEach(function(k,i){ var E=__td.EN[k]; var e=__SP(k,0,d,{hp:1e7,mhp:1e7,spd:0.02}); if(i%%6===3) e.hitT=0.09; d += (0.7 + E.size*0.75) * %f; }); return {n:g.enemies.length, S:__td.view().S}; })(%s)""" % (float(sys.argv[4]) if len(sys.argv) > 4 else 0.5, float(sys.argv[5]) if len(sys.argv) > 5 else 1.0, json.dumps([k for k in keys if k != 'submarine_sub'])))
+            print(info)
+            await pg.wait_for_timeout(2500)
+            await pg.screenshot(path=OUT + '/battle%d.png' % mi); print('saved', OUT + '/battle%d.png' % mi)
+        print('errors', len(errs)); [print(e) for e in errs[:10]]
+        await b.close()
+asyncio.run(main())

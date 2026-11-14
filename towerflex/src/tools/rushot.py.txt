@@ -1,0 +1,253 @@
+# [REN2] 유닛과 판 그리기 확인용 장면 캡처: python3 tools/rushot.py [장면,장면...|all] [가로x세로 ...]
+# 전투 중인 게임의 적과 탑에 SPEC 7절 상태 칸을 직접 넣어 장면을 만들고 shots/ru_<장면>_<크기>.png 로 찍는다
+# 장면: sea, air, over, tower, die, morph, rule(night, fog, meteor, blackout, airraid), hint, grid, perf
+# 판을 찾는 코드는 PICK 한 군데(시험 판이 실제 판으로 바뀌어도 여기만 보면 됨)
+import sys, asyncio, os, json
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+# 판 고르기: land = 첫 판, sea = 뱃길이 있는 첫 판, air = 항로가 있는 첫 판 (없으면 land)
+PICK = """(function(){ var M = __td.MAPS, o = { land: 0, sea: -1, air: -1 };
+  M.forEach(function (m, i) { if (o.sea < 0 && m.sea && m.sea.length) o.sea = i; if (o.air < 0 && m.air && m.air.length) o.air = i; });
+  if (o.sea < 0) o.sea = 0; if (o.air < 0) o.air = 0; return o; })()"""
+# 공통 도우미 (페이지 안): 적 소환, 탑 세우기, 정지
+HELP = """window.__t = (function(){ var td = __td;
+  function g(){ return td.G(); }
+  function en(k, pi, f, o){ var G = g(), E = td.EN[k]; if (!E) return null; var e = td.fd.spawn(k, pi || 0, 0); e.d = e.P.len * f; var st = 0; G.rule0 = G.rule; td.speed(1); return e, (function(){ var s = G.enemies[G.enemies.length - 1]; for (var a in (o || {})) s[a] = o[a]; return s; })(); }
+  function first(list){ for (var i = 0; i < list.length; i++) if (td.EN[list[i]]) return list[i]; return list[list.length - 1]; }
+  function cells(site){ var G = g(), out = []; for (var r = 0; r < G.rows; r++) for (var c = 0; c < G.cols; c++) { var i = r * G.cols + c; if (G.towerAt[i] >= 0) continue; var o = G.obsAt[i]; if (o >= 0 && G.obs[o].alive) continue; var k = G.kind[i]; if (site === 'land' ? k === 'g' : (k === 'water' && !(G.seaCell && G.seaCell[i]))) out.push([c, r]); } return out; }
+  function tw(k, c, r, lvl){ var G = g(); G.gold = 99999; var t = td.build(k, c, r); if (!t) return null; for (var i = 1; i < (lvl || 1); i++) td.upgrade(t, 0); return t; }
+  return { g: g, en: en, first: first, cells: cells, tw: tw };
+})();"""
+SCENES = {}
+def scene(name, mapk): 
+    def d(f): SCENES[name] = (mapk, f); return f
+    return d
+
+async def freeze(pg):
+    # 일시 정지 상태로 두고(창은 숨김) adv로 정해진 프레임만큼만 돌린다 → 연출을 원하는 순간에 찍을 수 있음
+    await pg.evaluate("window.__appPause(); document.getElementById('sModal').classList.add('hide')")
+async def adv(pg, n=1):
+    await pg.evaluate("__td.prof(%d)" % n); await pg.wait_for_timeout(60)
+async def settle(pg, steps=3, ms=0):
+    await freeze(pg); await adv(pg, steps)
+
+@scene('sea', 'sea')
+async def s_sea(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, ks = ['boat', 'destroyer', 'submarine', 'pirate', 'mulgwisin', 'fdBoat'];
+      var f = [0.2, 0.34, 0.48, 0.6, 0.72, 0.84], n = 0; ks.forEach(function (k) { if (__td.EN[k]) { var e = t.en(k, 0, f[n % f.length]); n++; } });
+      if (__td.EN.submarine) { var s = t.en('submarine', 0, 0.9); s.sub = 1; var s2 = t.en('submarine', 0, 0.95); s2.sub = 0.5; }
+      var c = t.cells('land'); t.tw('archer', c[10][0], c[10][1], 3); t.tw('catapult', c[40][0], c[40][1], 2);
+      t.g().enemies.forEach(function (e, i) { if (i % 2) e.hp *= 0.6; }); })()""")
+    await settle(pg); await shot('sea')
+
+@scene('air', 'air')
+async def s_air(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, n = 0;
+      ['jet', 'bomber', 'missile', 'fdJet'].forEach(function (k, i) { if (__td.EN[k]) { t.en(k, i % 2, 0.25 + 0.14 * n); n++; } });
+      ['heli', 'drone', 'bats', 'witch', 'wisp', 'gargoyle', 'bat'].forEach(function (k, i) { if (__td.EN[k]) { t.en(k, 0, 0.2 + 0.09 * i); } });
+      var c = t.cells('land'); t.tw('archer', c[30][0], c[30][1], 3); t.tw('archer', c[70][0], c[70][1], 2);
+      t.g().enemies.forEach(function (e, i) { if (i % 2 === 0) e.hp *= 0.55; }); __ru.guide({ t: 0, T: 30, air: 1, sea: 1 }); })()""")
+    await settle(pg); await shot('air')
+    # 미사일 경고 + 폭탄, 포탄
+    await pg.evaluate("""(function(){ var G = __t.g(), e = G.enemies[0];
+      G.proj.push({ kind: 'ebomb', x: 3.5, y: 6.2, z: 2.2, tx: 3.5, ty: 6.2, r: 0.9, t: 0 }); G.proj.push({ kind: 'ebomb', x: 6.5, y: 10.5, z: 0.6, tx: 6.5, ty: 10.5, r: 0.9, t: 0 });
+      G.proj.push({ kind: 'eshell', x: 5, y: 4, z: 0.8, ang: 0.6, t: 0 }); G.proj.push({ kind: 'eshell', x: 2.5, y: 9, z: 0.4, ang: -2.4, big: 1, t: 0 });
+      __ru.guide(null); })()""")
+    await adv(pg, 8); await shot('air2')
+
+@scene('over', 'land')
+async def s_over(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, f = t.first;
+      var L = [[f(['phantom', 'wraith']), { fade: 1 }], [f(['werewolf', 'wolf']), { rage: 1 }], [f(['eoduksini', 'troll']), { grow: 1.7 }], [f(['gumiho', 'shaman']), { sealT: 5 }], [f(['tank', 'knight']), { markT: 5 }], [f(['dokkaebi', 'orc']), { fearT: 5 }], [f(['mech', 'golemL']), { shield: 300 }], [f(['zombie', 'goblin']), { shield: 80, markT: 5, sealT: 5 }], [f(['saja', 'skeleton']), { shield: 120, fearT: 4, rage: 1 }], [f(['egg', 'stalker']), { fade: 0.5 }]];
+      L.forEach(function (q, i) { var e = t.en(q[0], 0, 0.1 + i * 0.085, q[1]); if (e) { e.hp *= 0.7; if (q[1].shield) e.shield = q[1].shield; } }); })()""")
+    await settle(pg); await shot('over')
+
+@scene('tower', 'land')
+async def s_tower(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, c = t.cells('land'), ks = ['archer', 'catapult', 'archer', 'catapult', 'archer', 'catapult'], L = [];
+      var pick = c.filter(function (p) { return p[1] > 3 && p[1] < 13 && p[0] > 0 && p[0] < 9; });
+      [[0, { stunT: 9 }], [9, { hexT: 9 }], [18, { charmT: 9 }], [27, { stunT: 9, ruWhy: 'blackout' }], [36, { stunT: 9, hexT: 9 }], [45, { charmT: 9 }]].forEach(function (q, i) { var p = pick[q[0] % pick.length], tw = t.tw(ks[i], p[0], p[1], 1 + i % 3 * 2); if (tw) for (var a in q[1]) tw[a] = q[1][a]; });
+      __ru.ev({ t: 'towerStun', tw: t.g().towers[0], sec: 3, why: 'shell' }); })()""")
+    await freeze(pg); await adv(pg, 110); await pg.evaluate("__t.g().towers.forEach(function (t) { if (t.stunT > 0) t.stunT = 9; if (t.hexT > 0) t.hexT = 9; if (t.charmT > 0) t.charmT = 9; })"); await adv(pg, 2); await shot('tower')
+
+@scene('die', 'land')
+async def s_die(pg, shot):
+    js = """(function(){ var t = __t, f = t.first, G = t.g(), ks = [f(['tank', 'jeep', 'wagon']), f(['phantom', 'zombie', 'wraith']), f(['dokkaebi', 'gumiho', 'orc']), 'goblin', f(['jet', 'heli', 'bat']), f(['witch', 'bats', 'bat'])];
+      ks.forEach(function (k, i) { var e = t.en(k, 0, 0.14 + i * 0.13); }); __td.step(2); window.__appPause(); document.getElementById('sModal').classList.add('hide');
+      var want = ['boom', 'ghost', 'ink', 'poof', 'boom', 'ghost'];
+      G.enemies.slice().forEach(function (e, i) { e.E = Object.assign({}, e.E); __td.EN['__d' + i] = Object.assign({}, __td.EN[e.k], { die: want[i], art: __td.EN[e.k].art || e.k });
+        __ru.ev({ t: 'kill', x: e.x, y: e.y, k: '__d' + i, gold: 9, face: e.face, fly: e.fly, dom: e.dom, size: e.size, boss: false, anim: e.anim, dirx: e.dirx, diry: e.diry }); e.dead = 1; });
+      G.enemies.length = 0; return ks; })()"""
+    ks = await pg.evaluate(js); print('  die kinds', ks)
+    await adv(pg, 5); await shot('die1'); await adv(pg, 10); await shot('die2'); await adv(pg, 18); await shot('die3'); await adv(pg, 30); await shot('die4')
+
+@scene('morph', 'sea')
+async def s_morph(pg, shot):
+    await freeze(pg)
+    await pg.evaluate("""(function(){ var t = __t, G = t.g(); __ru.ev({ t: 'morph', e: { x: 7.5, y: 8, k: 'imugi' }, to: 'yong' }); __ru.ev({ t: 'morph', e: { x: 3.5, y: 5, k: 'vampire' }, to: 'vampbat' }); __ru.ev({ t: 'morph', e: { x: 3.5, y: 11, k: 'count' }, to: 'x' }); })()""")
+    await adv(pg, 12); await shot('morph1'); await adv(pg, 14); await shot('morph2'); await adv(pg, 16); await shot('morph3')
+
+@scene('rule', 'land')
+async def s_rule(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, f = t.first, G = t.g(), c = t.cells('land').filter(function (p) { return p[1] > 2 && p[1] < 14; });
+      t.tw('archer', c[8][0], c[8][1], 3); t.tw('catapult', c[30][0], c[30][1], 2); t.tw('archer', c[52][0], c[52][1], 1);
+      [f(['zombie', 'goblin']), f(['ghoul', 'wolf']), 'orc', f(['witch', 'bat']), f(['werewolf', 'knight']), 'goblin', 'orc', f(['mummy', 'troll'])].forEach(function (k, i) { t.en(k, 0, 0.08 + i * 0.11); });
+      G.rule = { id: 'night' }; })()""")
+    await settle(pg); await shot('night')
+    await pg.evaluate("__t.g().rule = { id: 'fog' }"); await adv(pg, 20); await shot('fog')
+    await pg.evaluate("""(function(){ var G = __t.g(); G.rule = { id: 'meteor', marks: [{ x: 3.5, y: 5.5, t: 1.6, T: 2, r: 1.2 }, { x: 6.5, y: 10.5, t: 0.35, T: 2, r: 1.2 }] }; __ru.ev({ t: 'ruleEv', id: 'meteor', x: 6, y: 3, r: 1.2 }); })()""")
+    await adv(pg, 9); await shot('meteor')
+    await pg.evaluate("""(function(){ var G = __t.g(); G.rule = { id: 'blackout' }; G.towers.forEach(function (t, i) { if (i < 2) { t.stunT = 3; __ru.ev({ t: 'towerStun', tw: t, sec: 3, why: 'blackout' }); } }); __ru.ev({ t: 'ruleEv', id: 'blackout' }); })()""")
+    await adv(pg, 8); await shot('blackout')
+    await pg.evaluate("""(function(){ var G = __t.g(); G.rule = { id: 'airraid' }; __ru.ev({ t: 'ruleEv', id: 'airraid' }); __ru.ev({ t: 'boss', k: 'grumsh' }); })()""")
+    await adv(pg, 14); await shot('airraid')
+
+@scene('dark', 'land')
+async def s_dark(pg, shot):
+    # 어두운 지형(2장)과 밤 규칙에서 적과 건설 칸이 읽히는지: 지형 그림이 없으면 기존 dark 테마로
+    ths = await pg.evaluate("(function(){ var T = __ru.themes(), o = []; ['graveyard', 'crypt', 'manor', 'pumpkin', 'dark'].forEach(function (k) { if (T[k]) o.push(k); }); return o.slice(0, 2); })()")
+    for th in ths:
+        await pg.evaluate("__td.closeModal(); __td.MAPS[0].theme0 = __td.MAPS[0].theme0 || __td.MAPS[0].theme; __td.MAPS[0].theme = '%s'; __td.start(0, 'normal')" % th); await pg.wait_for_timeout(900)
+        await pg.evaluate("__td.closeModal(); (function(){ var G = __td.G(); G.pickWait = false; G.autoWave = false; G.nextT = 0; })()")
+        await pg.evaluate("""(function(){ var t = __t, f = t.first, c = t.cells('land').filter(function (p) { return p[1] > 2 && p[1] < 14; });
+          t.tw('archer', c[8][0], c[8][1], 3); t.tw('catapult', c[40][0], c[40][1], 2);
+          [f(['saja', 'stalker']), f(['eoduksini', 'wraith']), f(['crows', 'bat']), f(['bats', 'bat']), f(['vampbat', 'bat']), f(['gargoyle', 'wyvern']), f(['phantom', 'wraith']), f(['reaper', 'warlock']), f(['jangsan', 'wolf']), f(['werewolf', 'wolf'])].forEach(function (k, i) { var e = t.en(k, 0, 0.07 + i * 0.09); if (i % 2) e.hp *= 0.6; });
+          __ru.uis().gridHint = 99; })()""")
+        await freeze(pg); await adv(pg, 110); await shot('dark_' + th)
+        await pg.evaluate("__t.g().rule = { id: 'night' }"); await adv(pg, 3); await shot('dark_' + th + '_night')
+        await pg.evaluate("__t.g().rule = null; __ru.uis().gridHint = 0; __td.MAPS[0].theme = __td.MAPS[0].theme0")
+
+@scene('boss', 'land')
+async def s_boss(pg, shot):
+    # 챕터별 우두머리 등장(가장자리 두근, 고리)과 처치 연출
+    await freeze(pg)
+    for ch, ks in [(2, ['reaper', 'count', 'pumpking']), (3, ['titan', 'bigtank']), (4, ['duryeok', 'cheonho'])]:
+        k = await pg.evaluate("__t.first(%s.concat(['grumsh']))" % json.dumps(ks))
+        await pg.evaluate("""(function(){ var t = __t, G = t.g(), e = t.en('%s', 0, 0.45); __td.step(1); G.boss = e; __ru.ev({ t: 'boss', k: e.k }); window.__b = e; })()""" % k)
+        await adv(pg, 10); await shot('bossin%d' % ch)
+        await pg.evaluate("""(function(){ var G = __t.g(), e = window.__b; __ru.ev({ t: 'kill', x: e.x, y: e.y, k: e.k, gold: 300, face: e.face, fly: e.fly, dom: e.dom, size: e.size, boss: true, anim: e.anim, dirx: e.dirx, diry: e.diry }); e.dead = 1; G.enemies.length = 0; G.boss = null; })()""")
+        await adv(pg, 16); await shot('bossdie%d_a' % ch); await adv(pg, 22); await shot('bossdie%d_b' % ch); await adv(pg, 100)
+
+@scene('real', 'sea')
+async def s_real(pg, shot):
+    # 실제 능력이 붙은 적을 풀어 놓고 게임을 그대로 돌려 본다(변신, 잠수, 흐려짐, 순간 이동, 포격 등이 엔진에서 일어남)
+    await pg.evaluate("""(function(){ var t = __t, G = t.g(), c = t.cells('land').filter(function (p) { return p[1] > 2 && p[1] < 14; });
+      ['archer', 'catapult', 'archer', 'catapult', 'archer', 'archer'].forEach(function (k, i) { var p = c[(i * 11 + 5) % c.length]; t.tw(k, p[0], p[1], 3); });
+      [['vampire', 0.2, 0.45], ['werewolf', 0.3, 0.45], ['saja', 0.12, 1], ['phantom', 0.4, 1], ['tank', 0.5, 1], ['zombie', 0.6, 1], ['gumiho', 0.25, 1], ['eoduksini', 0.05, 1], ['reaper', 0.35, 1], ['witch', 0.3, 1]].forEach(function (q) { var e = t.en(q[0], 0, q[1]); if (e) e.hp = e.mhp * q[2]; });
+      [['submarine', 0.2, 1], ['destroyer', 0.35, 1], ['imugi', 0.5, 0.52], ['mulgwisin', 0.65, 1], ['pirate', 0.1, 1]].forEach(function (q) { var e = t.en(q[0], 0, q[1]); if (e) e.hp = e.mhp * q[2]; }); })()""")
+    await freeze(pg)
+    for i in range(6):
+        await adv(pg, 55 if i else 20); await shot('real%d' % (i + 1))
+    print('  상태 칸', await pg.evaluate("__t.g().enemies.map(function (e) { return e.k + (e.form ? '>' + e.form : '') + (e.sub > 0 ? ' sub' + e.sub.toFixed(1) : '') + (e.fade > 0 ? ' fade' : '') + (e.rage ? ' rage' : '') + (e.cast ? ' cast' : '') + (e.grow > 1 ? ' grow' + e.grow.toFixed(2) : ''); }).join(', ')"))
+
+@scene('real2', 'air')
+async def s_real2(pg, shot):
+    await pg.evaluate("""(function(){ var t = __t, G = t.g(), c = t.cells('land').filter(function (p) { return p[1] > 2 && p[1] < 14; });
+      ['archer', 'catapult', 'archer', 'catapult', 'archer', 'archer', 'catapult'].forEach(function (k, i) { var p = c[(i * 13 + 3) % c.length]; t.tw(k, p[0], p[1], 3); });
+      [['bomber', 0, 0.12], ['jet', 1, 0.05], ['missile', 0, 0.02], ['heli', 0, 0.2], ['drone', 0, 0.3], ['fortress', 0, 0.15]].forEach(function (q) { t.en(q[0], q[1], q[2]); });
+      [['tank', 0.3], ['bigtank', 0.15], ['mech', 0.45], ['ghoul', 0.5], ['horangi', 0.2], ['maiden', 0.3], ['titan', 0.05]].forEach(function (q) { t.en(q[0], 0, q[1]); }); G.rule = { id: 'meteor', cd: 3, t: 1, marks: [] }; })()""")
+    await freeze(pg)
+    for i in range(6):
+        await adv(pg, 45 if i else 20); await shot('real2_%d' % (i + 1))
+    print('  탄', await pg.evaluate("__t.g().proj.map(function (p) { return p.kind; }).join(',')"), '탑', await pg.evaluate("__t.g().towers.map(function (t) { return (t.stunT > 0 ? 's' : '') + (t.hexT > 0 ? 'h' : '') + (t.charmT > 0 ? 'c' : '') + (t.jamT > 0 ? 'j' : '') || '-'; }).join(' ')"))
+
+@scene('hint', 'sea')
+async def s_hint(pg, shot):
+    await pg.evaluate("""(function(){ var U = __ru.uis(), G = __t.g(), c = __t.cells('land')[20]; U.sel = { kind: 'cell', c: c[0], r: c[1] }; U.preview = { type: 'archer' }; })()""")
+    await freeze(pg); await adv(pg, 3); await shot('hint_land')
+    await pg.evaluate("""(function(){ var U = __ru.uis(), T = __ru.towers(), c = __t.cells('water')[12]; if (!T.__w) T.__w = Object.assign({}, T.archer, { site: 'water' }); U.sel = { kind: 'cell', c: c[0], r: c[1] }; U.preview = { type: '__w' }; })()""")
+    await adv(pg, 3); await shot('hint_water')
+    await pg.evaluate("(function(){ var U = __ru.uis(); U.preview = null; })()"); await adv(pg, 3); await shot('hint_cell')
+
+@scene('grid', 'land')
+async def s_grid(pg, shot):
+    # 작은 칸 점검: 봇 전투 중 조준 표시, 사거리 원, 숫자, 금화
+    await pg.evaluate("""(function(){ var G = __t.g(); G.gold = 3000; __td.bot(1); __td.speed(1); for (var i = 0; i < 60 * 40 && !G.over; i++) __td.step(1); var e = G.enemies.filter(function (q) { return !q.dead; })[0]; if (e) G.focus = { e: e }; var t = G.towers[0]; if (t) __ru.uis().sel = { kind: 'tower', t: t }; __td.speed(2); })()""")
+    await pg.wait_for_timeout(900); await shot('grid')
+
+async def run(names, sizes):
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        for sz in sizes:
+            W, H = map(int, sz.split('x'))
+            for nm in names:
+                if nm == 'perf': continue
+                mapk, fn = SCENES[nm]
+                ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+                pg = await ctx.new_page(); errs = []
+                pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+                pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+                await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(900)
+                picks = await pg.evaluate(PICK)
+                await pg.evaluate("__td.SAVE().tut.done=1; __td.SAVE().set.music=false; Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % picks[mapk]); await pg.wait_for_timeout(900)
+                await pg.evaluate("__td.closeModal()")
+                await pg.evaluate(HELP)
+                await pg.evaluate("(function(){ var G = __td.G(); G.pickWait = false; G.autoWave = false; G.nextT = 0; })()")
+                async def shot(tag):
+                    path = OUT + 'ru_%s_%s.png' % (tag, sz); await pg.screenshot(path=path); print('  ', path)
+                print(nm, sz)
+                await fn(pg, shot)
+                st = await pg.evaluate("(function(){ var s = __td.st(); return { err: s.err, parts: __td.pc().n, fx: __ru.RU.fx.length }; })()")
+                print('  상태', st, '콘솔 오류', len(errs), errs[:4])
+                await ctx.close()
+            if 'perf' in names:
+                ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+                pg = await ctx.new_page(); await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(900)
+                picks = await pg.evaluate(PICK)
+                for mk in ['land', 'sea', 'air']:
+                    await pg.evaluate("__td.SAVE().tut.done=1; __td.SAVE().set.music=false; __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % picks[mk]); await pg.wait_for_timeout(900)
+                    r = await pg.evaluate("(function(){ var g=__td.G(); g.gold=5000; __td.bot(1); __td.speed(0); for (var i=0;i<60*70 && !g.over;i++) __td.step(1); var o = __td.prof(120); return { frame: +o.frame.toFixed(2), bg: +o.bg.toFixed(2), en: g.enemies.length, tw: g.towers.length, all: o }; })()")
+                    print('perf', sz, mk, json.dumps({k: r[k] for k in ['frame', 'bg', 'en', 'tw']}), json.dumps({k: v for k, v in r['all'].items() if isinstance(v, (int, float)) and v >= 0.15 and k not in ('frame', 'bg')}))
+                await ctx.close()
+        await b.close()
+# 내 고리가 한 프레임에서 차지하는 몫: python3 tools/rushot.py share [가로x세로]
+# 봇 전투 70초 뒤(land, sea, air)와, 적 40마리에 모든 상태 + 밤 규칙을 건 무거운 장면에서 잰다
+async def share(sz):
+    W, H = map(int, sz.split('x'))
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(900)
+        picks = await pg.evaluate(PICK)
+        for mk in ['land', 'sea', 'air', 'heavy']:
+            await pg.evaluate("__td.closeModal(); __td.SAVE().tut.done=1; __td.SAVE().set.music=false; Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % picks['air' if mk == 'heavy' else mk]); await pg.wait_for_timeout(700)
+            await pg.evaluate("__td.closeModal(); window.__appPause(); document.getElementById('sModal').classList.add('hide'); (function(){ var g=__td.G(); g.pickWait=false; g.gold=5000; __td.bot(1); for (var i=0;i<60*70 && !g.over;i++) __td.step(1); })()")
+            if mk == 'heavy':
+                await pg.evaluate(HELP)
+                await pg.evaluate("""(function(){ var t = __t, G = t.g(), ks = Object.keys(__td.EN).filter(function (k) { return !__td.EN[k].boss && k.indexOf('_sub') < 0 && k.indexOf('fd') !== 0; });
+                  for (var i = 0; i < 40; i++) { var e = t.en(ks[(i * 7) % ks.length], i % 2, 0.05 + (i % 20) * 0.045, { rage: i % 3 ? 0 : 1, markT: i % 4 ? 0 : 99, sealT: i % 5 ? 0 : 99, fearT: i % 6 ? 0 : 99 }); if (e) { e.hp *= 0.7; if (i % 7 === 0) e.shield = 50; } }
+                  G.towers.forEach(function (tw, i) { if (i % 3 === 0) tw.stunT = 99; else if (i % 3 === 1) tw.hexT = 99; else tw.charmT = 99; }); G.rule = { id: 'night' }; __ru.guide({ t: 0, T: 99, air: 1, sea: 1 }); })()""")
+            rs = [await pg.evaluate("__ru.share(40)") for _ in range(3)]
+            best = min(rs, key=lambda r: r['frame'])
+            print('share', sz, mk, '적 %d, 탑 %d' % (best['en'], best['tw']), '프레임 %.2fms 중 내 고리 %.2fms (%.0f%%)' % (best['frame'], best['mine'], 100 * best['mine'] / max(0.01, best['frame'])), '세 번:', [(r['frame'], r['mine']) for r in rs], '길 안내 중' if best['guide'] else '', json.dumps(best['parts']))
+        print('오류', errs[:3]); await b.close()
+# 프레임 시간 전후 비교: python3 tools/rushot.py cmp <기준 빌드 루트> [가로x세로]
+# 두 빌드를 같은 브라우저에서 번갈아 재서 가장 빠른 값을 비교한다(다른 작업이 CPU를 쓰면 흔들리므로 최솟값)
+async def cmp(base, sz):
+    W, H = map(int, sz.split('x'))
+    async with async_playwright() as p:
+        b = await p.chromium.launch(); pages = []
+        for root in [base, ROOT]:
+            ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+            pg = await ctx.new_page(); await pg.goto('file://' + root + '/out/index.html'); await pg.wait_for_timeout(900); pages.append(pg)
+        picks = await pages[1].evaluate(PICK)
+        for mk in ['land', 'sea', 'air']:
+            res = [[], []]
+            for i, pg in enumerate(pages):
+                await pg.evaluate("__td.closeModal(); __td.SAVE().tut.done=1; __td.SAVE().set.music=false; Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.unlockAll(); __td.ownAll(); __td.start(%d,'normal')" % picks[mk]); await pg.wait_for_timeout(700)
+                await pg.evaluate("__td.closeModal(); window.__appPause(); document.getElementById('sModal').classList.add('hide'); (function(){ var g=__td.G(); g.pickWait=false; g.gold=5000; __td.bot(1); for (var i=0;i<60*70 && !g.over;i++) __td.step(1); })()")
+            for r in range(5):
+                for i, pg in enumerate(pages): res[i].append(await pg.evaluate("__ru.frame(60)"))
+            st = await pages[1].evaluate("(function(){ var g=__td.G(); return [g.enemies.length, g.towers.length, g.wave]; })()")
+            print('cmp', sz, mk, '적, 탑, 웨이브', st, '기준 %.2fms → 지금 %.2fms (최솟값), 중앙값 %.2f → %.2f' % (min(res[0]), min(res[1]), sorted(res[0])[2], sorted(res[1])[2]))
+        await b.close()
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'share': asyncio.run(share(sys.argv[2] if len(sys.argv) > 2 else '360x780')); sys.exit(0)
+    if len(sys.argv) > 2 and sys.argv[1] == 'cmp': asyncio.run(cmp(os.path.abspath(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else '360x780')); sys.exit(0)
+    a = sys.argv[1:]; sizes = [q for q in a if 'x' in q and q[0].isdigit()] or ['360x780']
+    names = [q for q in a if q not in sizes]; names = names[0].split(',') if names else ['all']
+    if names == ['all']: names = list(SCENES.keys())
+    os.makedirs(OUT, exist_ok=True)
+    asyncio.run(run(names, sizes))

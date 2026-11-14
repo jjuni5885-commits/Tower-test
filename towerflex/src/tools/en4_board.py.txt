@@ -1,0 +1,94 @@
+# EN4 그림판: python3 tools/en4_board.py <접두어> [keys(콤마)] [mode: all|big|small|frames]
+# big(130px 아이콘), small(S=36 전투 크기 1배 + 3배), frames(프레임 전부 + 맞음 + 뒤집기), dark(검보라, 짙은 초록 바탕 위 전투 크기)
+import sys, asyncio, base64, json, os
+from playwright.async_api import async_playwright
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CH4 = ['dokkaebi','wisp','egg','maiden','gumiho','saja','bulgasari','jangsan','eoduksini','tal','horangi','crows','mulgwisin','pirate','duryeok','cheonho','imugi','yong']
+JS_BIG = r"""
+(async function(keys, px, cols){
+  var rows = Math.ceil(keys.length / cols), c = document.createElement('canvas'); c.width = cols * px; c.height = rows * (px + 14); var x = c.getContext('2d');
+  for (var n = 0; n < keys.length; n++) {
+    var k = keys[n], cx = (n % cols) * px, cy = Math.floor(n / cols) * (px + 14), sea = __E4.EN[k].dom === 's', air = __E4.EN[k].dom === 'a';
+    x.fillStyle = sea ? '#4f8fb8' : air ? '#b9c7a0' : ((n + Math.floor(n / cols)) % 2 ? '#8fae6a' : '#d9c79a'); x.fillRect(cx, cy, px, px + 14);
+    var im = new Image(); im.src = __E4.icon(k, px); await im.decode(); x.drawImage(im, cx, cy);
+    x.fillStyle = '#000'; x.font = '11px sans-serif'; x.fillText(k, cx + 3, cy + px + 11);
+  }
+  return c.toDataURL();
+})
+"""
+JS_SMALL = r"""
+(function(keys, S, Z, BG, PATH){
+  var frs = [], tot = 10, hmax = 0;
+  keys.forEach(function(k){ var fr = __EF(k, S), f = fr.fr[1 % fr.n]; frs.push([k, f, fr]); hmax = Math.max(hmax, f.ay + (__E4.EN[k].fly ? S * 0.75 : 0)); });
+  var per = Math.ceil(keys.length / 2), rowH = hmax + S * 0.8, W = 0, rw = [0, 0];
+  frs.forEach(function(q, i){ rw[Math.floor(i / per)] += Math.max(q[1].c.width, S) + 6; }); W = Math.max(rw[0], rw[1]) + 20;
+  var c = document.createElement('canvas'); c.width = W; c.height = rowH * 2; var x = c.getContext('2d');
+  x.fillStyle = BG || '#86b85e'; x.fillRect(0, 0, W, c.height);
+  var cx = 10, row = -1;
+  frs.forEach(function(q, i){
+    var r = Math.floor(i / per); if (r !== row) { row = r; cx = 10; }
+    var k = q[0], f = q[1], E = __E4.EN[k], w = Math.max(f.c.width, S) + 6, by = (r + 1) * rowH - S * 0.4;
+    x.fillStyle = PATH ? PATH : E.dom === 's' ? '#3f86b4' : '#dcc9a0'; x.fillRect(cx - 3, by - S * 0.5, w, S);
+    x.fillStyle = 'rgba(40,30,60,0.3)'; x.beginPath(); x.ellipse(cx + w / 2 - 3, by, S * 0.3, S * 0.1, 0, 0, 7); x.fill();
+    var yy = by - (E.fly ? S * 0.75 : 0);
+    if (__E4.D[k] && __E4.D[k].top) { x.save(); x.translate(Math.round(cx + w / 2 - 3), Math.round(yy)); x.drawImage(f.c, -f.ax, -Math.round(f.ay * 0.75)); x.restore(); }
+    else x.drawImage(f.c, Math.round(cx + w / 2 - 3 - f.ax), Math.round(yy - f.ay));
+    cx += w;
+  });
+  var c2 = document.createElement('canvas'); c2.width = W * Z; c2.height = c.height * (Z + 1); var x2 = c2.getContext('2d');
+  x2.fillStyle = '#222'; x2.fillRect(0, 0, c2.width, c2.height); x2.drawImage(c, 0, 0); x2.imageSmoothingEnabled = false; x2.drawImage(c, 0, c.height, W * Z, c.height * Z);
+  return c2.toDataURL();
+})
+"""
+JS_FR = r"""
+(function(keys, S){
+  var all = [], CW = [], RY = [0], cols = 0;
+  keys.forEach(function(k, r){ var E = __E4.EN[k], fr = __EF(k, E.boss ? S * 0.62 : S); all.push(fr); var w = 0, h = 0; fr.fr.forEach(function(f){ w = Math.max(w, f.c.width); h = Math.max(h, f.c.height); }); CW.push(w + 6); RY.push(RY[r] + h + 8); cols = Math.max(cols, fr.n + 2); });
+  var W = 0; all.forEach(function(fr, r){ W = Math.max(W, (fr.n + 2) * CW[r]); });
+  var c = document.createElement('canvas'); c.width = W; c.height = RY[keys.length]; var x = c.getContext('2d');
+  all.forEach(function(fr, r){
+    var E = __E4.EN[keys[r]];
+    x.fillStyle = E.dom === 's' ? '#4f8fb8' : (r % 2 ? '#8fae6a' : '#d9c79a'); x.fillRect(0, RY[r], W, RY[r + 1] - RY[r]);
+    var ay = 0; fr.fr.forEach(function(f){ ay = Math.max(ay, f.ay); });
+    for (var i = 0; i < fr.n + 2; i++) {
+      var f = i < fr.n ? fr.fr[i] : fr.fr[1], w = fr.wh[i < fr.n ? i : 1], bx = i * CW[r] + CW[r] / 2, by = RY[r] + ay + 4;
+      x.save(); x.translate(Math.round(bx), Math.round(by));
+      if (i === fr.n + 1) x.scale(-1, 1);
+      x.drawImage(f.c, -f.ax, -f.ay);
+      if (i === fr.n) { x.globalAlpha = 0.9; x.drawImage(w.c, -w.ax, -w.ay); }
+      x.restore();
+      x.fillStyle = 'rgba(255,0,0,0.6)'; x.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 2, 2);
+    }
+  });
+  return c.toDataURL();
+})
+"""
+async def main():
+    pre = sys.argv[1]
+    keys = sys.argv[2].split(',') if len(sys.argv) > 2 and sys.argv[2] != 'all' else CH4
+    mode = sys.argv[3] if len(sys.argv) > 3 else 'all'
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 360, 'height': 640})
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        await pg.goto('file://' + ROOT + '/out/en4_test.html')
+        await pg.wait_for_timeout(1000)
+        def save(d, nm): open(pre + '_' + nm + '.png', 'wb').write(base64.b64decode(d.split(',')[1]))
+        if mode in ('all', 'big'):
+            for i in range(0, len(keys), 9):
+                save(await pg.evaluate(JS_BIG + '(%s, %d, %d)' % (json.dumps(keys[i:i+9]), 130, 3)), 'big%d' % (i // 9))
+        if mode in ('all', 'small'):
+            cmp_ = ['goblin', 'orc', 'knight', 'troll', 'wraith', 'wolf'] if len(keys) > 6 else []
+            save(await pg.evaluate(JS_SMALL + '(%s, %d, %d)' % (json.dumps(keys + cmp_), 36, 3)), 'small')
+        if mode == 'dark':
+            for nm, bg, pa in (('dark_purple', '#1e1630', '#33284a'), ('dark_green', '#16301f', '#27432f')):
+                for i in range(0, len(keys), 9):
+                    save(await pg.evaluate(JS_SMALL + '(%s, %d, %d, %s, %s)' % (json.dumps(keys[i:i+9]), 36, 3, json.dumps(bg), json.dumps(pa))), '%s%d' % (nm, i // 9))
+        if mode in ('all', 'frames'):
+            for i in range(0, len(keys), 3):
+                save(await pg.evaluate(JS_FR + '(%s, %d)' % (json.dumps(keys[i:i+3]), 100)), 'frames%d' % (i // 3))
+        print('errors', errs)
+        await b.close()
+asyncio.run(main())

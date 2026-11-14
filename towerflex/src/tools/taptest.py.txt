@@ -1,0 +1,46 @@
+# 실제 손가락 탭처럼 눌러 보는 시험: python3 tools/taptest.py [가로x세로]
+# 타이틀 → 지도 → 1번 노드 탭 → 시작 → 이야기 → 전투까지 좌표 탭으로만 진행
+import sys, asyncio
+from playwright.async_api import async_playwright
+import os
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    W, H = 360, 740
+    if len(sys.argv) > 1 and 'x' in sys.argv[1]: W, H = map(int, sys.argv[1].split('x'))
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=3, is_mobile=True, has_touch=True,
+                                  user_agent='Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36')
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error', 'warning') else None)
+        await pg.goto('file://' + ROOT + '/out/index.html')
+        await pg.wait_for_timeout(1500)
+        async def scr():
+            return await pg.evaluate("Array.from(document.querySelectorAll('.screen')).filter(function(s){return !s.classList.contains('hide') && getComputedStyle(s).display!=='none';}).map(function(s){return s.id;}).join(',')")
+        print('시작 화면:', await scr())
+        await pg.touchscreen.tap(W / 2, H / 2); await pg.wait_for_timeout(1200)
+        print('타이틀 탭 뒤:', await scr())
+        await pg.screenshot(path=OUT + 'tap_map.png')
+        r = await pg.evaluate("(function(){var n=document.querySelectorAll('.node')[0]; if(!n) return null; var b=n.getBoundingClientRect(); var x=b.left+b.width/2, y=b.top+b.height/2; var el=document.elementFromPoint(x,y); return {x:x,y:y,w:b.width,h:b.height,top:el?(el.id||el.className||el.tagName):null, inNode: n.contains(el)};})()")
+        print('1번 노드:', r)
+        if r:
+            await pg.touchscreen.tap(r['x'], r['y']); await pg.wait_for_timeout(800)
+        st = await pg.evaluate("(function(){var m=document.getElementById('sModal'); var go=document.getElementById('bGo'); var o={modal: m ? !m.classList.contains('hide') : null, go: null}; if(go){var b=go.getBoundingClientRect(); var el=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2); o.go={x:b.left+b.width/2,y:b.top+b.height/2,vis:b.bottom<=innerHeight && b.top>=0, top: el?(el.id||el.className||el.tagName):null, inGo: go.contains(el)};} return o;})()")
+        print('노드 탭 뒤:', st)
+        await pg.screenshot(path=OUT + 'tap_stage.png')
+        if st.get('go'):
+            await pg.touchscreen.tap(st['go']['x'], st['go']['y']); await pg.wait_for_timeout(900)
+        print('시작 탭 뒤:', await scr())
+        await pg.screenshot(path=OUT + 'tap_story.png')
+        for i in range(8):
+            await pg.touchscreen.tap(W / 2, H * 0.7); await pg.wait_for_timeout(350)
+        await pg.wait_for_timeout(800)
+        g = await pg.evaluate("(function(){var g=__td.G(); return g ? {mi:g.mi, wave:g.wave, paused: !!(window.UI_PAUSED)} : null;})()")
+        print('이야기 넘긴 뒤:', await scr(), g)
+        await pg.screenshot(path=OUT + 'tap_battle.png')
+        print('오류:', errs[:10])
+        await b.close()
+asyncio.run(main())

@@ -1,0 +1,121 @@
+# TW2 새 탑 7종 그림 확인: python3 tools/tw2shot.py sheet|aim|fire|icons|perf|battle [탑 키(쉼표) 또는 all] [S] [battle일 때 맵 번호]
+#  icons: 메뉴 아이콘(towerIcon) 판, perf: 한 모습 만드는 시간과 프레임당 그리기 시간
+#  sheet: 9모습 그림판(위 줄 조준 오른쪽 위, 아래 줄 조준 왼쪽 아래)  aim: 8방향  fire: 발사 프레임(fireT 0.35 → 0, spin, busy)
+#  battle: 전투 화면(시험용 HTML 안에서만 새 탑을 화살 쏘는 임시 탑으로 넣음, 원본 소스는 안 바꿈)
+# 결과: shots/tw2_*.png
+import sys, os, json, base64, asyncio
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+ALL = ['flak', 'sam', 'gatling', 'rocket', 'laser', 'tesla', 'sniper']
+LOOKS = [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [4, 1], [5, 1], [6, 1]]
+HOOK = """
+window.__t2 = { towerSpr: towerSpr, parts: drawTowerParts, towerIcon: towerIcon, mkC: mkC, cx2: cx2, TOWERS: TOWERS, TW_EXT: TW_EXT, TOWER_SPR: TOWER_SPR, TOWER_ORDER: TOWER_ORDER, drawSpr: drawSpr,
+  temp: function (keys) { keys.forEach(function (k) { if (TOWER_ORDER.indexOf(k) < 0) TOWER_ORDER.push(k); TOWERS[k].kind = 'arrow'; TOWER_UNLOCK[k] = 0; }); },
+  refresh: function () { refreshStats(G); }, wave: function () { if (G.pickWait) { tdAutoPick(G); closeModal(); } startWave(G); } };
+"""
+RENDER = """
+(function (rows, S, bg) {
+  var GG = {}, T = window.__t2, cw = Math.round(S * 2.3), ch = Math.round(S * 2.9), n = 0; rows.forEach(function (r) { n = Math.max(n, r.length); });
+  var c = T.mkC(cw * n, ch * rows.length), x = T.cx2(c), tm = [];
+  x.fillStyle = bg || '#8fc56b'; x.fillRect(0, 0, c.width, c.height);
+  rows.forEach(function (row, r) { row.forEach(function (q, j) {
+    var X = j * cw + cw / 2, Y = r * ch + ch * 0.84;
+    x.fillStyle = 'rgba(255,255,255,0.13)'; x.fillRect(X - S / 2, Y - S * 0.8, S, S);
+    var t0 = performance.now(), info = T.towerSpr(q.k, q.L, q.B, S); tm.push(performance.now() - t0);
+    var t = { k: q.k, lvl: q.L, br: q.B, aim: q.aim, fireT: q.fireT || 0, shots: q.shots || 0, spin: q.spin || 0, busy: q.busy || 0, born: -9, id: 1 };
+    if (q.pre) { var p = JSON.parse(JSON.stringify(t)); q.pre.forEach(function (st) { for (var kk in st) if (kk !== 'time') t[kk] = st[kk]; T.parts(T.cx2(T.mkC(4, 4)), t, 0, 0, S * (info.k || 1), st.time + (r * 50 + j) * 1e-5, info, GG); }); for (var k2 in p) t[k2] = p[k2]; }
+    T.drawSpr(x, info.back, X, Y); T.parts(x, t, X, Y, S * (info.k || 1), (q.time == null ? 0.3 : q.time) + (r * 50 + j) * 1e-5, info, q.icon ? null : GG); T.drawSpr(x, info.front, X, Y);
+  }); });
+  tm.sort(function (a, b) { return b - a; });
+  return { url: c.toDataURL(), max: tm[0], avg: tm.reduce(function (a, b) { return a + b; }, 0) / tm.length };
+})
+"""
+def test_html():
+    src = open(ROOT + '/out/index.html', encoding='utf8').read()
+    i = src.rfind('\n})();')
+    p = '/tmp/tw2_test.html'
+    open(p, 'w', encoding='utf8').write(src[:i] + HOOK + src[i:])
+    return p
+async def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else 'sheet'
+    keys = sys.argv[2].split(',') if len(sys.argv) > 2 and sys.argv[2] != 'all' else ALL
+    S = int(sys.argv[3]) if len(sys.argv) > 3 else 90
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        pg = await b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+        errs = []
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error',) else None)
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        await pg.goto('file://' + test_html())
+        await pg.wait_for_timeout(1200)
+        async def render(rows, name, bg=None):
+            r = await pg.evaluate(RENDER + '(%s, %d, %s)' % (json.dumps(rows), S, json.dumps(bg)))
+            open(OUT + name, 'wb').write(base64.b64decode(r['url'].split(',')[1]))
+            print(name, 'spr max %.1fms avg %.1fms' % (r['max'], r['avg']))
+        tag = '_'.join(keys) if len(keys) < 7 else 'all'
+        if mode == 'sheet':
+            rows = []
+            for k in keys:
+                rows.append([{'k': k, 'L': q[0], 'B': q[1], 'aim': -0.7, 'icon': 1} for q in LOOKS])
+                if S >= 60: rows.append([{'k': k, 'L': q[0], 'B': q[1], 'aim': 2.5, 'fireT': 0.33, 'shots': 1, 'busy': 1, 'time': 0.9, 'pre': [{'time': 0.5, 'fireT': 0, 'shots': 0}]} for q in LOOKS])
+            await render(rows, 'tw2_sheet_%s_%d.png' % (tag, S))
+        elif mode == 'icons':
+            r = await pg.evaluate("""(function (keys, px) { var T = window.__t2, L9 = [[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[4,1],[5,1],[6,1]], c = T.mkC(px * 9, px * keys.length), x = T.cx2(c); x.fillStyle = '#fff6e8'; x.fillRect(0, 0, c.width, c.height);
+              keys.forEach(function (k, r) { L9.forEach(function (q, j) { x.strokeStyle = 'rgba(0,0,0,0.12)'; x.strokeRect(j * px + 0.5, r * px + 0.5, px - 1, px - 1); x.drawImage(T.towerIcon(k, q[0], q[1], px), j * px, r * px); }); }); return c.toDataURL(); })(%s, %d)""" % (json.dumps(keys), S))
+            open(OUT + 'tw2_icons_%d.png' % S, 'wb').write(base64.b64decode(r.split(',')[1])); print('tw2_icons_%d.png' % S)
+        elif mode == 'aim':
+            rows = []
+            for k in keys:
+                for q in ([3, 0], [6, 0], [6, 1]):
+                    rows.append([{'k': k, 'L': q[0], 'B': q[1], 'aim': i * 0.7854, 'shots': 1} for i in range(8)])
+            await render(rows, 'tw2_aim_%s_%d.png' % (tag, S))
+        elif mode == 'fire':
+            rows = []
+            fts = [0.35, 0.3, 0.24, 0.16, 0.08, 0.0, 0.35, 0.2]
+            for k in keys:
+                for q in ([3, 0], [6, 0], [6, 1]):
+                    row = []
+                    for i, ft in enumerate(fts):
+                        sh = 1 if i < 6 else 2
+                        row.append({'k': k, 'L': q[0], 'B': q[1], 'aim': 0.5 if q[1] == 0 else 2.2, 'fireT': ft, 'shots': sh, 'spin': i * 0.37, 'busy': i / 7.0, 'time': 1.0 + i * 0.05,
+                                    'pre': [{'time': 0.5, 'fireT': 0, 'shots': 0}] + ([{'time': 0.98, 'fireT': 0.35, 'shots': 1}] if i >= 6 else [])})
+                    rows.append(row)
+            await render(rows, 'tw2_fire_%s_%d.png' % (tag, S))
+        elif mode == 'perf':
+            js = """(function (keys, S) { var T = window.__t2, out = {}, L9 = [[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[4,1],[5,1],[6,1]], infos = {};
+              T.towerSpr('archer', 1, 0, S + 3);
+              keys.forEach(function (k) { var mx = 0, sum = 0, n = 0, wl = ''; L9.forEach(function (q) { var t0 = performance.now(); infos[k + q] = T.towerSpr(k, q[0], q[1], S + 1); var d = performance.now() - t0; if (d > mx) { mx = d; wl = q[0] + (q[1] ? 'B' : 'A'); } sum += d; n++; }); out[k] = { sprMax: +mx.toFixed(1), at: wl, sprAvg: +(sum / n).toFixed(1) }; });
+              var c = T.mkC(400, 400), x = T.cx2(c);
+              keys.forEach(function (k) { var b0 = 0, b1 = 0, m1 = 0; L9.forEach(function (q) { var info = infos[k + q], t = { k: k, lvl: q[0], br: q[1], aim: 0, fireT: 0, shots: 0, spin: 0, busy: 0.5 };
+                for (var pass = 0; pass < 2; pass++) { var t1 = performance.now(); for (var i = 0; i < 320; i++) { t.aim = i * 0.19635; t.fireT = (i & 7) * 0.05; t.shots = i >> 3; t.spin = i * 0.1; T.parts(x, t, 200, 300, S * info.k, pass * 6 + i / 60, info, {}); } x.getImageData(0, 0, 1, 1); var e = (performance.now() - t1) / 320; if (pass) { b1 += e; m1 = Math.max(m1, e); } else b0 += e; } });
+                out[k].bakePass = +(b0 / 9).toFixed(3); out[k].frame = +(b1 / 9).toFixed(3); out[k].frameMax = +m1.toFixed(3); });
+              return out; })(KEYS, SS)""".replace('KEYS', json.dumps(keys)).replace('SS', str(S))
+            r = await pg.evaluate(js)
+            for k in keys: print(k, r[k])
+        elif mode == 'battle':
+            W, H = 390, 844
+            await pg.mouse.click(W / 2, H / 2)
+            await pg.wait_for_timeout(500)
+            await pg.evaluate("__t2.temp(%s); __td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; })" % json.dumps(keys))
+            mi = int(sys.argv[4]) if len(sys.argv) > 4 else 2
+            await pg.evaluate("__td.start(%d, 'normal')" % mi)
+            await pg.wait_for_timeout(2500)
+            info = await pg.evaluate("""(function (keys) { var g = __td.G(); g.gold = 999999; g.lives = 9999; var spots = [], n = 0, i = 0;
+              for (var r = 2; r < 13; r += 2) for (var c = (r >> 1) & 1; c < 8; c += 2) spots.push([c, r]);
+              var looks = keys.length > 3 ? [[2,0],[6,0],[6,1]] : [[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[4,1],[5,1],[6,1]];
+              keys.forEach(function (k) { looks.forEach(function (q) { var t = null; while (i < spots.length && !t) { t = __td.build(k, spots[i][0], spots[i][1]); i++; } if (!t) return; t.lvl = q[0]; t.br = q[1]; n++; }); });
+              __t2.refresh(); __t2.wave(); return n; })(%s)""" % json.dumps(keys))
+            print('built', info)
+            await pg.evaluate("__td.speed(1)")
+            for k in range(3):
+                await pg.wait_for_timeout(3500)
+                if k: await pg.evaluate("try { __t2.wave(); } catch (e) {}")
+                await pg.screenshot(path=OUT + 'tw2_battle_%s_%d.png' % (tag, k))
+            st = await pg.evaluate("(function(){var g=__td.G(); return {wave:g.wave, lives:g.lives, towers:g.towers.length, en:g.enemies.length, fps:__td.fps(), err:__td.st().err};})()")
+            print('state', json.dumps(st))
+        print('errors', len(errs))
+        for e in errs[:12]: print(e)
+        await b.close()
+asyncio.run(main())

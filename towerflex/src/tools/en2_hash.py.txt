@@ -1,0 +1,34 @@
+# 기존 적 27종 그림 픽셀 해시(전후 비교용): python3 tools/en2_hash.py <out.json> [keys(콤마)]
+import sys, asyncio, json, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import en2_hook
+from playwright.async_api import async_playwright
+JS = r"""
+(function(keys){
+  function h(c){ var d=c.getContext('2d').getImageData(0,0,c.width,c.height).data, a=2166136261>>>0; for(var i=0;i<d.length;i++){ a^=d[i]; a=Math.imul(a,16777619)>>>0; } return c.width+'x'+c.height+':'+a.toString(16); }
+  var out={}, Ss=[24,40,57,60,83,130];
+  keys.forEach(function(k){ Ss.forEach(function(S){
+    var EF=window.__EF; var fr=EF(k,S), r=[fr.n, Math.round(fr.h*1000)];
+    fr.fr.forEach(function(f){ r.push(h(f.c)+'@'+f.ax+','+f.ay); }); fr.wh.forEach(function(f){ r.push(h(f.c)+'@'+f.ax+','+f.ay); });
+    if(fr.kneel) r.push('K'+h(fr.kneel.c)+'@'+fr.kneel.ax+','+fr.kneel.ay); if(fr.icon) r.push('I'+h(fr.icon.c)+'@'+fr.icon.ax+','+fr.icon.ay);
+    out[k+':'+S]=r; }); });
+  return out;
+})
+"""
+async def main():
+    dst = sys.argv[1]; src = en2_hook.make('/tmp/en2w/hash.html')
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 360, 'height': 640})
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto('file://' + src)
+        await pg.wait_for_timeout(1200)
+        keys = sys.argv[2].split(',') if len(sys.argv) > 2 else None
+        if not keys:
+            keys = ['goblin','orc','wolf','knight','bat','stalker','shaman','spider','skeleton','troll','golemL','golemM','golemS','wyvern','wraith','wagon','warlock','iceslime','ember','mirror','bunny','guard','grumsh','arachne','yotun','barkan','yotun2','twinking']
+        r = await pg.evaluate(JS + '(%s)' % json.dumps(keys))
+        json.dump(r, open(dst, 'w'))
+        print('hashed', len(r), 'errors', errs)
+        await b.close()
+asyncio.run(main())

@@ -1,0 +1,15 @@
+# EN2 시험 공통: out/index.html 사본에 시험용 고리(__EF, __SP, __EI)를 끼워 /tmp/en2w/test.html 로 만든다 (src 는 건드리지 않음)
+import os, sys
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOOK = "\nwindow.__EF = enemyFrames; window.__ED = EN_DRAW; window.__EI = enemyIcon; window.__ESPR = EN_SPR; window.__SP = function (k, pi, d, ex) { return spawnEnemy(window.__td.G(), k, pi, d, ex); };\n"
+def make(dst='/tmp/en2w/test.html', src=None):
+    src = src or os.path.join(ROOT, 'out', 'index.html')
+    h = open(src, encoding='utf8').read()
+    i = h.rfind('\n})();')
+    assert i > 0
+    h = h[:i] + HOOK + h[i:]
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    open(dst, 'w', encoding='utf8').write(h)
+    return dst
+if __name__ == '__main__':
+    print(make(*(sys.argv[1:2])))

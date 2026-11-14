@@ -1,0 +1,51 @@
+# MB(지형 4장, 바다) 확인용 캡처: python3 tools/mw_shot.py 360x640 0,1,2 [꼬리표] [bot초] [prof]
+# 꼬리표가 pv<N>m 이면 임시 시험 판 목록을 N칸 돌려(?mw=N) 1번 판 창 미리보기와 지도를 찍음(임시 시험 파일 src/i18n_v20.js 가 있을 때만 뜻이 있음)
+# 전투 화면 shots/mw_<꼬리표>_b<판>.png, 판 창 미리보기 shots/mw_<꼬리표>_p<판>.png, 지도 shots/mw_<꼬리표>_map.png
+import sys, asyncio, json, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    W, H = map(int, (sys.argv[1] if len(sys.argv) > 1 else '360x640').split('x'))
+    maps = [int(v) for v in (sys.argv[2] if len(sys.argv) > 2 else '0').split(',')]
+    tag = sys.argv[3] if len(sys.argv) > 3 else 't'
+    secs = float(sys.argv[4]) if len(sys.argv) > 4 else 0
+    prof = len(sys.argv) > 5 and sys.argv[5] == 'prof'
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        pg = await b.new_page(viewport={'width': W, 'height': H}, device_scale_factor=2)
+        errs = []
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        await pg.goto('file://' + ROOT + '/out/index.html' + (('?mw=' + tag[2:-1]) if tag.startswith('pv') else ''))
+        await pg.wait_for_timeout(1200)
+        await pg.mouse.click(W / 2, H / 2)
+        await pg.wait_for_timeout(900)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1")
+        if tag.endswith('m'):
+            await pg.screenshot(path=OUT + 'mw_%s_map.png' % tag)
+            for mi in ([0] if tag.startswith('pv') else maps):
+                await pg.evaluate("document.querySelectorAll('.node')[%d].click()" % mi)
+                await pg.wait_for_timeout(900)
+                await pg.screenshot(path=OUT + 'mw_%s_p%d.png' % (tag, mi))
+                await pg.evaluate("__td.closeModal()")
+                await pg.wait_for_timeout(300)
+        for mi in maps:
+            t0 = await pg.evaluate("performance.now()")
+            await pg.evaluate("__td.start(%d, 'normal')" % mi)
+            t1 = await pg.evaluate("performance.now()")
+            await pg.wait_for_timeout(1100)
+            await pg.evaluate("var c=document.querySelector('#modal .pkc'); if(c) c.click();")
+            await pg.wait_for_timeout(500)
+            if secs > 0:
+                await pg.evaluate("__td.G().gold += 900; __td.bot(1); __td.speed(3)")
+                await pg.wait_for_timeout(int(secs * 1000))
+            await pg.screenshot(path=OUT + 'mw_%s_b%d.png' % (tag, mi))
+            if prof:
+                await pg.evaluate("__td.speed(1)")
+                r = await pg.evaluate("__td.prof(90)")
+                print(mi, 'start ms', round(t1 - t0), 'prof', json.dumps({k: round(v, 2) for k, v in r.items() if k in ('bg', 'frame', 'liquid', 'ambient')}))
+        print('errors', len(errs))
+        for e in errs[:12]: print(e)
+        await b.close()
+asyncio.run(main())

@@ -1,0 +1,332 @@
+# 다국어 점검: 언어마다 화면 흐름을 손가락 탭(필요하면 JS 클릭)으로 돌며
+#  (1) 화면에 남은 한글(DOM 글자, 캔버스 fillText/strokeText 글자, 잠깐 떴다 사라지는 알림, CSS content, 문서 제목)
+#  (2) 글자 넘침(버튼, 칩, 탭, 제목 등이 제 칸이나 화면 밖으로 삐져나옴)
+#  (3) 사전 검사(자리표시 {0}{s} 짝, 한글 남음, 가운데 점), 데이터 전체 점검(__i18n.audit)
+# 를 모아 보여 줌. 언어 고르는 목록의 '한국어'(translate="no")는 뺌
+# 사용: python3 tools/i18ncheck.py [언어들|all] [가로x세로] [흐름들|all] [--shots 언어들] [--quiet]
+#   예: python3 tools/i18ncheck.py all 360x640
+#       python3 tools/i18ncheck.py en,zh,th 360x640 title,map,stage,battle --shots en,zh
+#       python3 tools/i18ncheck.py touchflow en 360x640     (기존 touchflow.py 를 그 언어로 한 번)
+# 흐름: title map stage stages story battle tray upgrade skills wave pause settings picker win research codex lose endless boss
+# 결과: 화면 요약 + shots/i18n_<언어>.json, 캡처 shots/i18n_<언어>_<이름>.png (--shots 로 고른 언어만)
+# 언어는 localStorage 'lastarrow.lang' 으로 정함(게임은 자동 시험 브라우저에서 저장된 언어가 없으면 한국어)
+import sys, os, json, asyncio, subprocess, re
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+ALL_FLOWS = ['title', 'map', 'stage', 'stages', 'story', 'battle', 'tray', 'upgrade', 'skills', 'wave', 'pause', 'settings', 'picker', 'win', 'research', 'codex', 'lose', 'endless', 'boss']
+HOOK = r"""
+(function(){
+  var HAN = /[ᄀ-ᇿㄱ-ㆎ가-힣]/;
+  try { localStorage.setItem('lastarrow.lang', '%LANG%'); } catch (e) {}
+  window.__cvKo = {}; window.__cvAll = {}; window.__koSeen = {};
+  var P = CanvasRenderingContext2D.prototype, f = P.fillText, s = P.strokeText;
+  function rec(t) { if (typeof t !== 'string') return; if (HAN.test(t)) __cvKo[t] = 1; if (/[^\d\s+\-!.,%x×]/.test(t)) __cvAll[t] = 1; }
+  P.fillText = function (t) { rec(t); return f.apply(this, arguments); };
+  P.strokeText = function (t) { rec(t); return s.apply(this, arguments); };
+  function chk(n) {
+    if (n.nodeType === 3) { var p = n.parentNode; if (!p || p.nodeName === 'SCRIPT' || p.nodeName === 'STYLE') return; if (p.closest && p.closest('[translate="no"]')) return; if (HAN.test(n.data)) __koSeen[n.data.trim()] = (p.id || p.className || p.nodeName); }
+    else if (n.nodeType === 1 && n.nodeName !== 'SCRIPT' && n.nodeName !== 'STYLE') { var w = document.createTreeWalker(n, NodeFilter.SHOW_TEXT), t; while ((t = w.nextNode())) chk(t); }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    new MutationObserver(function (list) { var nodes = []; list.forEach(function (m) { if (m.type === 'characterData') nodes.push(m.target); else m.addedNodes.forEach(function (a) { nodes.push(a); }); }); setTimeout(function () { nodes.forEach(chk); }, 0); })
+      .observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+})();
+"""
+SCAN = r"""
+(function(){
+  var HAN = /[ᄀ-ᇿㄱ-ㆎ가-힣]/, vis = [], hid = [], pse = [], W = innerWidth, H = innerHeight;
+  function shown(el) { if (!el) return false; if (el.closest('.hide')) return false; var cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') return false; for (var a = el; a && a.nodeType === 1; a = a.parentElement) if (+getComputedStyle(a).opacity === 0) return false; var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
+  function path(el) { var a = []; for (var i = 0; el && el.nodeType === 1 && i < 3; i++, el = el.parentElement) a.unshift(el.nodeName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '')); return a.join(' > '); }
+  var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), t;
+  while ((t = w.nextNode())) {
+    var p = t.parentNode; if (!p || p.nodeName === 'SCRIPT' || p.nodeName === 'STYLE') continue;
+    if (!HAN.test(t.data) || (p.closest && p.closest('[translate="no"]'))) continue;
+    (shown(p) ? vis : hid).push([t.data.trim().slice(0, 80), path(p)]);
+  }
+  document.querySelectorAll('body *').forEach(function (el) {
+    ['::before', '::after'].forEach(function (ps) { var c = getComputedStyle(el, ps).content; if (c && c !== 'none' && HAN.test(c) && shown(el)) pse.push([c, path(el) + ps]); });
+    ['placeholder', 'title', 'aria-label'].forEach(function (a) { var v = el.getAttribute(a); if (v && HAN.test(v)) vis.push([v, path(el) + '@' + a]); });
+  });
+  // 넘침: 버튼, 칩, 탭, 제목 등
+  var SEL = 'button, .btn, .tab, .tc, .tc .nm, .uc, .uc b, .uc span, .uc strong, .srow, .srow span, .lrow, .lopt, .ci, .ci span, .pt, .mt, .ms, .rt, .b1, .b2, .band, .node .nn, #toast, #tut, .sk em, #bWave, #bWave .wl, .ib, .stat, .xbtn, .tx, .th > b, .tt b, .tt span, .tinfo, .rgain, .newt, .ritem, .ritem b, .ritem em, .etag, .enm, .est, .who, #stSkip, .snext, .l0, .l1, .l2, .l3, .tap, .mtt, .sub, .maxed, .cbr b, .cdet > b, .rgrid span, .rgrid b, .ld, .ver, .mnum, .nb, .dinfo, .recs span, .rsub, .rs, .lhead, .lnote, .mbtns, .pbtns, .trow, .tg, #bossbar .bn';
+  var ovf = [], seen = new Set();
+  document.querySelectorAll(SEL).forEach(function (el) {
+    if (seen.has(el) || !shown(el) || el.matches('.sk')) return; seen.add(el);   // .sk 단추는 이름표가 원래 단추보다 넓음(이름표끼리 겹침은 아래에서)
+    var txt = (el.innerText || '').replace(/\s+/g, ' ').trim(); if (!txt) return;
+    var cs = getComputedStyle(el), r = el.getBoundingClientRect(), why = [];
+    if (el.getAnimations && el.getAnimations().some(function (a) { return a.playState === 'running' && !(a.effect && a.effect.getComputedTiming && a.effect.getComputedTiming().iterations === Infinity); })) return; // 튀어나오는 연출 중(크기가 잠깐 커짐)
+    if (cs.display !== 'inline' && el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) why.push('넘침 ' + el.scrollWidth + '>' + el.clientWidth);
+    if (cs.display !== 'inline' && (cs.overflowY === 'hidden' || cs.overflow === 'hidden') && el.scrollHeight > el.clientHeight + 2 && el.clientHeight > 0) why.push('세로 잘림 ' + el.scrollHeight + '>' + el.clientHeight);
+    if (r.left < -2 || r.right > W + 2) why.push('화면 밖 ' + Math.round(r.left) + '~' + Math.round(r.right));
+    var pa = el.parentElement;
+    if (pa && cs.position !== 'absolute' && cs.position !== 'fixed' && pa !== document.body) { var q = pa.getBoundingClientRect(), pcs = getComputedStyle(pa); if (q.width > 0 && pcs.display !== 'inline' && (r.left < q.left - 2 || r.right > q.right + 2)) why.push('부모 밖 ' + Math.round(r.left - q.left) + '/' + Math.round(q.right - r.right)); }
+    if (why.length) ovf.push([path(el), txt.slice(0, 50), why.join(', ')]);
+  });
+  // 기술 이름표끼리 겹침
+  var lab = Array.prototype.filter.call(document.querySelectorAll('.sk em'), shown).map(function (e) { return [e, e.getBoundingClientRect()]; });
+  for (var i = 1; i < lab.length; i++) if (lab[i - 1][1].right > lab[i][1].left + 1) ovf.push([path(lab[i][0]), lab[i - 1][0].innerText + ' / ' + lab[i][0].innerText, '이름표 겹침 ' + Math.round(lab[i - 1][1].right - lab[i][1].left)]);
+  var cv = Object.keys(window.__cvKo || {}); window.__cvKo = {};
+  var seenKo = Object.keys(window.__koSeen || {}).map(function (k) { return [k.slice(0, 80), window.__koSeen[k]]; }); window.__koSeen = {};
+  var title = HAN.test(document.title) ? [document.title] : [];
+  return { vis: vis, hid: hid, pse: pse, ovf: ovf, cv: cv, seen: seenKo, title: title, miss: (window.__i18nMissing || []).slice() };
+})()
+"""
+
+def lint_dict():
+    js = r"""
+const fs=require('fs'),vm=require('vm');const s=fs.readFileSync(process.argv[1],'utf8');const c={};vm.createContext(c);vm.runInContext(s+';this.R=I18N_ROWS;this.C=I18N_COLS;',c);
+const HAN=/[ᄀ-ᇿㄱ-ㆎ가-힣]/,ph=x=>(x.match(/\{(\d|s|t)\}/g)||[]).sort().join('');const err=[],empty={},keys=new Set();
+c.R.forEach(r=>{if(keys.has(r[0]))err.push('원문 겹침: '+r[0]);keys.add(r[0]);if(r.length!==c.C.length+1)err.push('칸 수 '+r.length+': '+r[0]);c.C.forEach((l,i)=>{const v=r[i+1];if(!v){if(r[0].indexOf('@')<0)empty[l]=(empty[l]||0)+1;return;}if(ph(v)!==ph(r[0].replace(/@.*$/,'')))err.push(l+' 자리표시: '+r[0]+' → '+v);if(HAN.test(v))err.push(l+' 한글: '+v);if(/[·・]/.test(v))err.push(l+' 가운데 점: '+v);});});
+console.log(JSON.stringify({rows:c.R.length,err:err,empty:empty}));"""
+    r = subprocess.run(['node', '-e', js, ROOT + '/src/i18n_data.js'], capture_output=True, text=True)
+    try: return json.loads(r.stdout)
+    except Exception: return {'rows': 0, 'err': ['사전 읽기 실패: ' + r.stderr[:300]], 'empty': {}}
+
+async def run_lang(b, lang, W, H, flows, shots, quiet):
+    ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    await ctx.add_init_script(HOOK.replace('%LANG%', lang))
+    pg = await ctx.new_page()
+    errs = []
+    pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+    pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type == 'error' else None)
+    await pg.goto('file://' + ROOT + '/out/index.html')
+    await pg.wait_for_timeout(1300)
+    R = {'lang': lang, 'vis': {}, 'hid': {}, 'cv': {}, 'seen': {}, 'pse': {}, 'title': [], 'ovf': {}, 'steps': [], 'fail': [], 'err': errs}
+    async def ev(js): return await pg.evaluate(js)
+    async def wait(ms): await pg.wait_for_timeout(ms)
+    async def tap_xy(x, y, ms=300): await pg.touchscreen.tap(x, y); await wait(ms)
+    async def tap_el(sel, ms=350, idx=0):
+        r = await ev("""(function(){var e=document.querySelectorAll(%s)[%d]; if(!e) return null; var b=e.getBoundingClientRect();
+          if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({block:'center'}); b=e.getBoundingClientRect(); }
+          return {x:b.left+b.width/2, y:b.top+b.height/2};})()""" % (json.dumps(sel), idx))
+        if not r: return False
+        await tap_xy(r['x'], r['y'], ms); return True
+    async def click(sel, ms=120, idx=0):
+        ok = await ev("(function(){var e=document.querySelectorAll(%s)[%d]; if(!e) return false; e.click(); return true;})()" % (json.dumps(sel), idx))
+        await wait(ms); return ok
+    async def vis(id): return await ev("(function(){var e=document.getElementById('%s'); return !!e && !e.classList.contains('hide') && getComputedStyle(e).display!=='none';})()" % id)
+    async def cap(name, shot=False):
+        d = await ev(SCAN)
+        R['steps'].append(name)
+        for k in ('vis', 'hid', 'pse'):
+            for t, where in d[k]: R[k].setdefault(t, '%s @%s' % (where, name))
+        for t in d['cv']: R['cv'].setdefault(t, name)
+        for t, where in d['seen']: R['seen'].setdefault(t, '%s @%s' % (where, name))
+        for t in d['title']: R['title'].append(t)
+        for p, t, why in d['ovf']: R['ovf'].setdefault(p + ' | ' + t, '%s @%s' % (why, name))
+        R['miss'] = d['miss']
+        if shot and lang in shots: await pg.screenshot(path=OUT + 'i18n_%s_%s.png' % (lang, name))
+    async def cards():
+        n = 0
+        while n < 6 and await ev("!!document.getElementById('bOk') && !document.getElementById('sModal').classList.contains('hide')"):
+            await cap('card', n == 0); await tap_el('#bOk', 350); n += 1
+    async def free_cells():
+        return await ev("""(function(){var g=__td.G(), out=[]; for (var r=1;r<13;r++) for (var c=0;c<8;c++){ var i=r*8+c;
+           if (g.kind[i]!=='g' || g.obsAt[i]>=0) continue; if (g.towers.some(function(t){return t.c===c&&t.r===r;})) continue; out.push([c,r]); } return out;})()""")
+    async def cell_xy(c, r):
+        return await ev("(function(){var v=__td.view(); return [(v.ox + (%d + 0.5) * v.S) / v.dpr, (v.oy + (%d + 0.5) * v.S) / v.dpr];})()" % (c, r))
+    async def step(name, fn):
+        if name not in flows: return
+        try: await fn()
+        except Exception as e: R['fail'].append('%s: %s' % (name, str(e)[:160]))
+    st = {}
+    # ---- 흐름 ----
+    async def f_title(): await cap('title', True)
+    async def f_map():
+        await ev("__td.unlockAll()")
+        await tap_xy(W / 2, H / 2, 1100)
+        await cap('map', True)
+    async def f_stage():
+        for i in (0, 1, 2):
+            if not await vis('sMap'): await ev("__td.closeModal()")
+            await tap_el('.node', 700, i)
+            await cap('stage%d' % (i + 1), i in (0, 2))
+            for dk in ('easy', 'hard', 'endless', 'normal'):
+                await click('.tab[data-dk="%s"]' % dk, 150); await cap('stage%d_%s' % (i + 1, dk))
+            await tap_el('#bClose', 400)
+    async def f_stages():
+        for i in range(3, 12):
+            await click('.node', 250, i); await cap('stage%d' % (i + 1)); await click('#bClose', 150)
+    async def f_story():
+        await tap_el('.node', 700, 0); await tap_el('#bGo', 900)
+        n = 0
+        while await vis('story') and n < 12:
+            await cap('story%d' % n, n == 1); await tap_xy(W / 2, H * 0.78, 350); n += 1
+        await wait(800)
+    async def f_battle():
+        if not await ev("!!__td.G()"):
+            await ev("__td.start(0,'normal')"); await wait(800)
+        await ev("__td.G().gold=99999")
+        await cap('battle', True)
+    async def f_tray():
+        cells = await free_cells(); c, r = cells[len(cells) // 2]; st['cell'] = (c, r)
+        x, y = await cell_xy(c, r); await tap_xy(x, y, 450)
+        await cap('tray', True)
+        ks = await ev("Array.prototype.map.call(document.querySelectorAll('#tray .tc'), function(b){return b.getAttribute('data-k');})")
+        for k in ks:
+            await click('#tray .tc[data-k="%s"]' % k, 120); await cap('tray_' + k, k == 'bell')
+        await click('#tray .tc[data-k="archer"]', 120); await click('#tray .tc[data-k="archer"]', 300)   # 고르고 한 번 더 → 건설
+        await cap('built')
+    async def f_upgrade():
+        g = await ev("__td.G().towers.length")
+        if not g:
+            cells = await free_cells(); await ev("__td.build('archer',%d,%d)" % tuple(cells[0]))
+        free = await free_cells()
+        kinds = ['catapult', 'arcane', 'frost', 'ballista', 'bell', 'flame', 'alchemy', 'cannon', 'mint']
+        for i, k in enumerate(kinds):
+            if i < len(free): await ev("__td.build('%s',%d,%d)" % (k, free[i * 2 % len(free)][0], free[i * 2 % len(free)][1]))
+        await wait(200)
+        tws = await ev("__td.G().towers.map(function(t){return [t.k,t.c,t.r];})")
+        for ti, (k, c, r) in enumerate(tws):
+            br = ti % 2
+            x, y = await cell_xy(c, r)
+            for lv in range(4):
+                await tap_xy(x, y, 220)   # 탑 쟁반
+                if lv == 0: await cap('up_%s' % k, k in ('archer', 'mint'))
+                if lv == 2: await cap('up_%s_branch' % k, k == 'archer')
+                sel = '#tray .uc' if lv != 2 else '#tray .uc[data-br="%d"]' % br
+                await click(sel, 80); await click(sel, 260)
+                await cap('up_%s_%d' % (k, lv + 2))
+            await click('#tray [data-a="mode"]', 80); await cap('mode_%s' % k)
+            await click('#tray [data-a="close"]', 80)
+        await cap('upgraded', True)
+    async def f_skills():
+        await ev("(function(){var t=document.getElementById('tray'); if(t.className.indexOf('hide')<0){var x=t.querySelector('[data-a=close]'); x&&x.click();}})()")
+        for k in ('wall', 'last', 'rain'):
+            await tap_el('#sk_' + k, 250); await cap('skill_' + k)
+            await tap_el('#sk_' + k, 200)   # 다시 눌러 겨누기 취소
+        # 길 위 누르기 → 알림
+        pc = await ev("(function(){var g=__td.G(); for (var r=0;r<14;r++) for (var c=0;c<8;c++) if (g.kind[r*8+c]==='p') return [c,r]; return null;})()")
+        if pc:
+            x, y = await cell_xy(pc[0], pc[1]); await tap_xy(x, y, 300); await cap('tap_path')
+        await ev("__td.G().sk.rain.cd = 5")
+        await tap_el('#sk_rain', 250); await cap('skill_cd')
+        await ev("__td.G().sk.rain.cd = 0")
+    async def f_wave():
+        await tap_el('#bWave', 500); await cap('wave1', True)
+        await wait(1200); await cards()
+        await tap_el('#bSpeed', 250); await cap('speed')
+        await ev("__td.step(240)"); await wait(300); await cards()
+        await tap_el('#bWave', 400); await cap('early')
+        await ev("__td.step(600)"); await wait(300); await cards(); await cap('wave_more', True)
+    async def f_pause():
+        await cards()
+        await tap_el('#bPause', 450); await cap('pause', True)
+    async def f_settings():
+        if not await vis('sModal'): await tap_el('#bPause', 450)
+        await tap_el('#pSet', 450); await cap('settings', True)
+        await click('#sReset', 150); await cap('settings_reset')
+    async def f_picker():
+        if not await ev("!!document.getElementById('sLang')"):
+            if not await vis('sModal'): await tap_el('#bPause', 450)
+            await tap_el('#pSet', 450)
+        await tap_el('#sLang', 450); await cap('picker', True)
+        await tap_el('#lClose', 400); await cap('picker_back')
+        await tap_el('#sClose', 400)
+        if await ev("!!document.getElementById('pRes')"): await tap_el('#pRes', 400)
+    async def f_win():
+        await ev("__td.closeModal()")
+        if not await ev("!!__td.G() && !__td.G().over"): await ev("__td.start(0,'normal')"); await wait(800)
+        await ev("__td.G().gold=4000; __td.bot(1); for (var i=0;i<600 && !__td.G().over;i++) __td.step(60);")
+        await wait(400); await cards(); await wait(2600)
+        for i in range(8):
+            if await ev("!!document.getElementById('rMap')"): break
+            await wait(400)
+        await cap('win', True)
+        await tap_el('#rMap', 1000)
+        n = 0
+        while await vis('story') and n < 12: await tap_xy(W / 2, H * 0.78, 250); n += 1
+    async def f_research():
+        if not await vis('sMap'): await ev("__td.closeModal()"); await ev("(function(){var b=document.getElementById('rMap'); b&&b.click();})()"); await wait(800)
+        await tap_el('#bRes', 500); await cap('research', True)
+        await click('.ritem.can', 150); await cap('research_learn')
+        await click('.ritem:not(.own):not(.can)', 150); await cap('research_cant')
+        await click('#rReset', 150); await cap('research_reset')
+        await tap_el('#rDone', 500)
+    async def f_codex():
+        await tap_el('#bCodex', 500); await cap('codex')
+        n = await ev("document.querySelectorAll('.ci').length")
+        for i in range(n):
+            await click('.ci', 100, i); await cap('codex_t%d' % i, i == 0)
+        await ev("(function(){var S=__td.SAVE(); __td.EN && Object.keys(__td.EN).forEach(function(k){S.seen[k]=1;});})()")
+        await click('.tab[data-t="enemy"]', 150); await cap('codex_enemy', True)
+        n = await ev("document.querySelectorAll('.ci').length")
+        for i in range(n):
+            await click('.ci', 100, i); await cap('codex_e%d' % i)
+        await tap_el('#cClose', 400)
+    async def f_lose():
+        await ev("__td.closeModal(); __td.start(1,'normal')"); await wait(900)
+        await ev("__td.G().lives=1; for (var i=0;i<400 && !__td.G().over;i++){ if(__td.G().waiting){ document.getElementById('bWave').click(); } __td.step(60);} ")
+        await wait(300); await cards(); await wait(2400)
+        await cap('lose', True)
+    async def f_endless():
+        await ev("__td.closeModal(); __td.start(0,'endless')"); await wait(900)
+        await ev("__td.G().lives=1; for (var i=0;i<400 && !__td.G().over;i++){ if(__td.G().waiting){ document.getElementById('bWave').click(); } __td.step(60);} ")
+        await wait(300); await cards(); await wait(2400)
+        await cap('endless')
+    async def f_boss():
+        await ev("__td.closeModal(); __td.start(2,'easy')"); await wait(900)
+        await ev("__td.G().gold=9000; __td.bot(1); for (var i=0;i<900 && !__td.G().boss && !__td.G().over;i++) __td.step(30);")
+        await wait(500); await cards(); await cap('boss', True)
+        await ev("for (var i=0;i<900 && !__td.G().over;i++) __td.step(30);"); await wait(500); await cards(); await cap('boss_end')
+    for name, fn in [('title', f_title), ('map', f_map), ('stage', f_stage), ('stages', f_stages), ('story', f_story), ('battle', f_battle), ('tray', f_tray), ('upgrade', f_upgrade), ('skills', f_skills), ('wave', f_wave), ('pause', f_pause), ('settings', f_settings), ('picker', f_picker), ('win', f_win), ('research', f_research), ('codex', f_codex), ('lose', f_lose), ('endless', f_endless), ('boss', f_boss)]:
+        await step(name, fn)
+    try: R['audit'] = await ev("__i18n.audit()")
+    except Exception as e: R['audit'] = {'bad': ['audit 실패 ' + str(e)[:100]]}
+    R['cvAll'] = sorted(await ev("Object.keys(window.__cvAll||{})"))[:200]
+    await ctx.close()
+    return R
+
+def touchflow(lang, size):
+    src = open(os.path.join(ROOT, 'tools', 'touchflow.py'), encoding='utf-8').read()
+    inj = "        await ctx.add_init_script(\"try{localStorage.setItem('lastarrow.lang','%s')}catch(e){}\")\n        pg = await ctx.new_page()" % lang
+    src = src.replace('        pg = await ctx.new_page()', inj, 1)
+    sys.argv = [os.path.join(ROOT, 'tools', 'touchflow.py'), size]
+    exec(compile(src, 'touchflow.py(' + lang + ')', 'exec'), {'__name__': '__main__', '__file__': os.path.join(ROOT, 'tools', 'touchflow.py')})
+
+async def main():
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    opt = {}
+    for i, a in enumerate(sys.argv):
+        if a.startswith('--'): opt[a[2:]] = sys.argv[i + 1] if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--') else '1'
+    quiet = 'quiet' in opt
+    lint = lint_dict()
+    print('사전: %d줄, 오류 %d, 빈 칸 %s' % (lint['rows'], len(lint['err']), json.dumps(lint['empty'], ensure_ascii=False)))
+    for e in lint['err'][:30]: print('  ', e)
+    W, H = 360, 640
+    if len(args) > 1 and 'x' in args[1]: W, H = map(int, args[1].split('x'))
+    flows = ALL_FLOWS if len(args) < 3 or args[2] == 'all' else args[2].split(',')
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        if not args or args[0] == 'all':
+            pg = await b.new_page(); await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(600)
+            langs = [l for l in await pg.evaluate("__i18n.langs") if l != 'ko']; await pg.close()
+        else: langs = args[0].split(',')
+        shots = opt.get('shots', '').split(',') if 'shots' in opt else []
+        tot = []
+        for lang in langs:
+            R = await run_lang(b, lang, W, H, flows, shots, quiet)
+            json.dump(R, open(OUT + 'i18n_%s.json' % lang, 'w'), ensure_ascii=False, indent=1)
+            ko = len(R['vis']) + len(R['cv']) + len(R['seen']) + len(R['pse']) + len(R['title'])
+            print('== %s: 남은 한글 %d (화면 %d, 캔버스 %d, 잠깐 뜬 글자 %d, CSS %d, 제목 %d), 숨은 노드 %d, 사전에 없음 %d, 점검 %s개 중 못 찾음 %d, 넘침 %d, 실패 %d, 오류 %d' % (
+                lang, ko, len(R['vis']), len(R['cv']), len(R['seen']), len(R['pse']), len(R['title']), len(R['hid']), len(R.get('miss', [])),
+                R['audit'].get('checked', '?'), len(R['audit'].get('bad', [])), len(R['ovf']), len(R['fail']), len(R['err'])))
+            if not quiet:
+                for k, lab in (('vis', '화면'), ('cv', '캔버스'), ('seen', '잠깐'), ('pse', 'CSS'), ('hid', '숨은')):
+                    for t, w in list(R[k].items())[:25]: print('   %s: %s   [%s]' % (lab, t, w))
+                for t in R.get('miss', [])[:25]: print('   사전에 없음:', t)
+                for t in R['audit'].get('bad', [])[:25]: print('   점검:', t)
+                for k, w in list(R['ovf'].items())[:40]: print('   넘침: %s   [%s]' % (k, w))
+                for f in R['fail']: print('   흐름 실패:', f)
+                for e in R['err'][:10]: print('   콘솔:', e)
+            tot.append((lang, ko, len(R['ovf'])))
+        await b.close()
+    print('합계:', ', '.join('%s 한글 %d 넘침 %d' % t for t in tot))
+_a = [a for a in sys.argv[1:] if not a.startswith('--')]
+if _a and _a[0] == 'touchflow':
+    print('touchflow 언어', _a[1] if len(_a) > 1 else 'en')
+    touchflow(_a[1] if len(_a) > 1 else 'en', _a[2] if len(_a) > 2 else '360x640')
+else:
+    asyncio.run(main())

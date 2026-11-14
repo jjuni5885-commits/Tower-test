@@ -1,0 +1,67 @@
+# TW3 전투 화면 확인(임시 패치는 out/tw3_battle.html에만, 원본 소스는 안 건드림): python3 tools/tw3battle.py [low|high] [맵 번호]
+#  새 탑 7종을 TOWER_ORDER에 넣고(공격 방식은 임시로 화살), 물 칸 건설을 풀어 실제 판 위에 지어 본다
+import sys, asyncio, json, os, subprocess
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+def patched():
+    subprocess.check_call(['node', ROOT + '/tools/build.js'], stdout=subprocess.DEVNULL)
+    h = open(ROOT + '/out/index.html', encoding='utf8').read()
+    def rep(a, b):
+        nonlocal h
+        assert a in h, a[:60]
+        h = h.replace(a, b, 1)
+    rep('var TW2_ORDER =', "['airbase','warship','turtle','singijeon','jangseung','barracks','shrine'].forEach(function(k){TOWERS[k].kind='arrow';TOWERS[k].air=1;TOWER_UNLOCK[k]=0;TOWER_ORDER.push(k);});\nvar TW2_ORDER =")
+    rep("if (g.kind[i] !== 'g' || g.towerAt[i] >= 0) return false;", "if ((g.kind[i] !== 'g' && g.kind[i] !== 'water') || g.towerAt[i] >= 0) return false;")
+    rep('window.__td = {', 'window.__td = { sw: function () { startWave(G); }, rs: function () { refreshStats(G); }, kindAt: function (c, r) { return G.kind[r * COLS + c]; }, dims: function () { return [COLS, ROWS]; },')
+    open(ROOT + '/out/tw3_battle.html', 'w', encoding='utf8').write(h)
+async def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else 'low'
+    patched(); os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=['--autoplay-policy=no-user-gesture-required'])
+        pg = await b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+        errs = []
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error',) else None)
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        await pg.goto('file://' + ROOT + '/out/tw3_battle.html')
+        await pg.wait_for_timeout(1200)
+        await pg.mouse.click(195, 420)
+        await pg.wait_for_timeout(400)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; })")
+        water = await pg.evaluate("__td.MAPS.map(function(m,i){return [i, m.grid.join('').split('~').length-1];})")
+        mi = int(sys.argv[2]) if len(sys.argv) > 2 else max(water, key=lambda w: w[1])[0]
+        await pg.evaluate("__td.start(%d, 'normal')" % mi)
+        await pg.wait_for_timeout(1800)
+        for _ in range(3):
+            if await pg.evaluate("__td.st().modal"): await pg.mouse.click(105, 470); await pg.wait_for_timeout(900)
+        pr0 = await pg.evaluate("(function(){ var a = __td.prof(40), o = {}; for (var k in a) o[k] = +(+a[k]).toFixed(2); return o; })()")
+        print('prof before', json.dumps(pr0))
+        land = [('singijeon', 0), ('airbase', 0), ('barracks', 0), ('jangseung', 0), ('shrine', 0)]
+        sea = [('warship', 0), ('turtle', 0)]
+        if mode == 'base': land = [('archer', 0), ('catapult', 0), ('arcane', 0), ('cannon', 0), ('flame', 0), ('ballista', 0), ('frost', 0)]; plan_l = [(k, L, 0) for k, _ in land for L in (4, 5)]; plan_s = []
+        elif mode == 'low': plan_l = [(k, L, 0) for k, _ in land for L in (1, 3)]; plan_s = [(k, L, 0) for k, _ in sea for L in (1, 3)]
+        elif mode == 'a': plan_l = [(k, L, 0) for k, _ in land for L in (4, 6)]; plan_s = [(k, L, 0) for k, _ in sea for L in (4, 6)]
+        else: plan_l = [(k, L, 1) for k, _ in land for L in (4, 6)]; plan_s = [(k, L, 1) for k, _ in sea for L in (4, 6)]
+        res = await pg.evaluate("""(function (PL, PS) {
+          var g = __td.G(), d = __td.dims(), C = d[0], R = d[1], out = [], used = {};
+          g.gold = 999999; g.maxLv = 5; if (g.pickWait) g.pickWait = false;
+          function near(c, r) { var n = 0; for (var a = -1; a <= 1; a++) for (var b = -1; b <= 1; b++) { var x = c + a, y = r + b; if (x >= 0 && y >= 0 && x < C && y < R && __td.kindAt(x, y) === 'p') n++; } return n; }
+          function cells(kind) { var L = []; for (var r = 1; r < R - 1; r++) for (var c = 0; c < C; c++) if (__td.kindAt(c, r) === kind) L.push([c, r, near(c, r)]); L.sort(function (a, b) { return b[2] - a[2]; }); return L; }
+          function place(list, plan) { var i = 0; plan.forEach(function (p) { while (i < list.length) { var c = list[i++]; var t = __td.build(p[0], c[0], c[1]); if (t) { for (var q = 1; q < Math.min(p[1], 5); q++) __td.upgrade(t, p[2]); if (p[1] === 6) { t.lvl = 6; } out.push([p[0], p[1], p[2], c[0], c[1], t.lvl]); break; } } }); }
+          place(cells('g'), PL); place(cells('water'), PS);
+          return out; })(%s, %s)""" % (json.dumps(plan_l), json.dumps(plan_s)))
+        print('built', len(res), json.dumps(res))
+        await pg.wait_for_timeout(3500)
+        pr = await pg.evaluate("(function(){ var a = __td.prof(40), o = {}; for (var k in a) o[k] = +(+a[k]).toFixed(2); return o; })()")
+        print('prof after', json.dumps(pr))
+        await pg.evaluate("__td.G().lives = 9999; __td.sw(); __td.speed(1)")
+        for k in range(3):
+            await pg.wait_for_timeout(2600 if k else 4200)
+            await pg.screenshot(path=OUT + 'tw3_battle_%s_%d.png' % (mode, k))
+        st = await pg.evaluate("(function(){var g=__td.G(); return {wave:g.wave, towers:g.towers.length, en:g.enemies.length, fps:Math.round(__td.fps()), err: __td.st().err};})()")
+        print('state', json.dumps(st))
+        print('errors', len(errs))
+        for e in errs[:12]: print(e[:300])
+        await b.close()
+asyncio.run(main())

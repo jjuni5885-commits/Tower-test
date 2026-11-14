@@ -1,0 +1,24 @@
+# 앱 아이콘 굽기: python3 tools/uia_icon.py [화소=512]  → shots/app_icon_<화소>.png (ui_art2.js uiAppIcon, 글자 없음)
+# 같이: 챕터 카드 그림 4장을 한 장에 → shots/uia_cards.png (그림 확인용)
+import sys, os, asyncio, base64
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    px = int(sys.argv[1]) if len(sys.argv) > 1 else 512
+    os.makedirs(OUT, exist_ok=True)
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 400, 'height': 700})
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(800)
+        url = await pg.evaluate("__ch.icon(%d)" % px)
+        open(OUT + 'app_icon_%d.png' % px, 'wb').write(base64.b64decode(url.split(',')[1]))
+        print('저장', OUT + 'app_icon_%d.png' % px)
+        sheet = await pg.evaluate("""(function(){var c=document.createElement('canvas'); c.width=720; c.height=4*250; var x=c.getContext('2d'), n=0;
+          return new Promise(function(res){ [1,2,3,4].forEach(function(ch){ var im=new Image(); im.onload=function(){ x.drawImage(im, 0, (ch-1)*250); if (++n===4) res(c.toDataURL('image/png')); }; im.src=__ch.card(ch, 720, 240); }); });})()""")
+        open(OUT + 'uia_cards.png', 'wb').write(base64.b64decode(sheet.split(',')[1]))
+        print('저장', OUT + 'uia_cards.png', '오류', errs[:3])
+        await b.close()
+asyncio.run(main())

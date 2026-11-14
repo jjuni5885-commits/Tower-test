@@ -1,0 +1,26 @@
+# REN1 시험용 겹침 빌드: python3 tools/rtbuild.py [--plain] [--eng2]
+# 내 사본(src, tools)을 /tmp/rtov 에 복사하고, 아직 합쳐지지 않은 탑 그림 갈래(tw1~tw4)의 art_tower*.js 를 덮어 빌드한다(내 사본과 커밋에는 넣지 않음).
+# --plain 이면 덮지 않고 내 사본 그대로, --eng2 면 탑 로직 갈래의 logic_towers2.js, data_towers2.js 도 덮음(실제 탄 확인용, 합쳐진 뒤에는 필요 없음)
+import os, shutil, subprocess, sys
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+WT = os.path.dirname(ROOT); OV = '/tmp/rtov'
+def main():
+    shutil.rmtree(OV, ignore_errors=True); os.makedirs(OV + '/out')
+    shutil.copytree(ROOT + '/src', OV + '/src'); shutil.copytree(ROOT + '/tools', OV + '/tools')
+    if os.path.exists(ROOT + '/out/font.css'): shutil.copy(ROOT + '/out/font.css', OV + '/out/font.css')
+    os.symlink(os.path.realpath(ROOT + '/node_modules'), OV + '/node_modules')
+    over = []
+    if '--plain' not in sys.argv and not os.path.exists(ROOT + '/src/art_tower2.js'):   # 탑 그림이 아직 안 합쳐진 사본일 때만 그림 갈래를 덮음
+        over += [('tw1', 'art_tower.js'), ('tw2', 'art_tower2.js'), ('tw3', 'art_tower3.js'), ('tw4', 'art_tower4.js')]
+    if '--eng2' in sys.argv or '--eng2all' in sys.argv:   # 탑 로직이 아직 안 합쳐진 사본일 때: 새 파일 둘만(--eng2), 또는 data.js, logic.js, bot.js까지(--eng2all)
+        if not os.path.exists(ROOT + '/src/logic_towers2.js'): over += [('eng2', f) for f in ['logic_towers2.js', 'data_towers2.js'] + (['data.js', 'logic.js', 'bot.js'] if '--eng2all' in sys.argv else [])]
+    used = []
+    for d, f in over:
+        p = os.path.join(WT, d, 'src', f)
+        if not os.path.exists(p): continue
+        if subprocess.run(['node', '--check', p], capture_output=True).returncode != 0: print('건너뜀(문법 오류, 작업 중):', d, f); continue
+        shutil.copy(p, OV + '/src/' + f); used.append(d + '/' + f)
+    r = subprocess.run(['node', OV + '/tools/build.js'], capture_output=True, text=True)
+    print('덮은 파일:', ', '.join(used) or '없음'); print(r.stdout.strip(), r.stderr.strip()[:600])
+    return r.returncode
+sys.exit(main())

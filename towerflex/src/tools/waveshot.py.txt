@@ -1,0 +1,67 @@
+"""웨이브 버튼 새 상태 화면 확인: python3 waveshot.py <프로젝트 루트> <접두어>"""
+import asyncio
+import sys
+from playwright.async_api import async_playwright
+
+ROOT, PRE = sys.argv[1], sys.argv[2]
+W, H = 360, 640
+
+
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=1, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto('file://' + ROOT + '/out/index.html'); await pg.wait_for_timeout(1500)
+        await pg.evaluate("__td.unlockAll(); Object.keys(__td.EN).forEach(function(k){ __td.SAVE().seen[k]=1; }); __td.SAVE().tut.done=1; __td.SAVE().set.autoWave=false")
+        await pg.evaluate("__td.start(0, 'normal')"); await pg.wait_for_timeout(1500)
+        # 탑 몇 개 + 전투 시작
+        await pg.evaluate("var g=__td.G(); g.gold += 600")
+        await pg.evaluate("document.getElementById('bWave').click()"); await pg.wait_for_timeout(400)
+        # 1) 적이 남아 있는데 시간이 다 된 상태: 강제로 시간을 0으로, 적은 그대로
+        await pg.evaluate("var g=__td.G(); __td.step(60*8); g.nextT=0")
+        await pg.wait_for_timeout(500)
+        s1 = await pg.evaluate("var g=__td.G(); ({wave:g.wave, nextT:g.nextT, alive:g.enemies.filter(e=>!e.dead).length, lbl:document.getElementById('waveLbl').innerText, pulse:document.getElementById('bWave').classList.contains('pulse')})")
+        print('남은 적 있음, 시간 끝:', s1)
+        await pg.screenshot(path=f'/tmp/{PRE}_1_wait.png')
+        # 2) 적을 모두 정리: 수동이면 버튼이 깜빡이며 기다려야 함
+        await pg.evaluate("var g=__td.G(); g.enemies.forEach(e=>{e.dead=1}); g.spawnQ.length=0; __td.step(10)")
+        await pg.wait_for_timeout(700)
+        s2 = await pg.evaluate("var g=__td.G(); ({wave:g.wave, clearT:+g.clearT.toFixed(2), lbl:document.getElementById('waveLbl').innerText, pulse:document.getElementById('bWave').classList.contains('pulse'), toast:document.getElementById('toast').innerText})")
+        print('정리, 수동:', s2)
+        await pg.screenshot(path=f'/tmp/{PRE}_2_ready.png')
+        await pg.wait_for_timeout(4000)
+        s2b = await pg.evaluate("__td.G().wave")
+        print('4초 뒤에도 같은 웨이브?', s2b == s2['wave'])
+        # 3) 설정 창에 자동 시작 줄
+        await pg.evaluate("document.getElementById('bPause') && document.getElementById('bPause').click()"); await pg.wait_for_timeout(500)
+        has_set = await pg.evaluate("!!document.getElementById('pSet')")
+        if has_set:
+            await pg.evaluate("document.getElementById('pSet').click()")
+        else:
+            print("pSet 없음")
+        await pg.wait_for_timeout(500)
+        await pg.screenshot(path=f'/tmp/{PRE}_3_settings.png')
+        rows = await pg.evaluate("Array.from(document.querySelectorAll('#modal .srow')).map(b=>b.innerText.replace(/\\n/g,' '))")
+        print('설정 줄:', rows)
+        # 자동 시작 켜기
+        await pg.evaluate("document.querySelector('#modal .srow[data-k=autoWave]').click()"); await pg.wait_for_timeout(300)
+        on = await pg.evaluate("({save:__td.SAVE().set.autoWave, g:__td.G().autoWave})")
+        print('자동 켬 반영:', on)
+        await pg.evaluate("document.getElementById('sClose').click()"); await pg.wait_for_timeout(300)
+        await pg.evaluate("var r=document.getElementById('pRes'); if(r) r.click()"); await pg.wait_for_timeout(300)
+        # 4) 자동 켜진 채 정리 상태: 카운트다운 보이고 3초 뒤 시작
+        await pg.evaluate("var g=__td.G(); g.clearT=0.6"); await pg.wait_for_timeout(250)
+        s4 = await pg.evaluate("({lbl:document.getElementById('waveLbl').innerText, num:document.getElementById('waveNum').innerText})")
+        print('자동 카운트다운:', s4)
+        await pg.screenshot(path=f'/tmp/{PRE}_4_auto.png')
+        w0 = await pg.evaluate("__td.G().wave")
+        await pg.wait_for_timeout(4500)
+        w1 = await pg.evaluate("__td.G().wave")
+        print('자동으로 다음 웨이브:', w0, '->', w1)
+        print('페이지 오류:', errs)
+        await b.close()
+
+asyncio.run(main())

@@ -1,0 +1,45 @@
+# TW1 탑 그림판 캡처: python3 tools/tw1shot.py <이름> '<__tw.sheet 옵션 JSON>'  → shots/tw1_<이름>.png
+# 예: python3 tools/tw1shot.py big '{"mode":"forms","S":90,"rows":["archer","catapult"]}'
+#     python3 tools/tw1shot.py cost  (그림 만드는 시간) / python3 tools/tw1shot.py icons (아이콘 판)
+import sys, asyncio, json, base64, os
+from playwright.async_api import async_playwright
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+OUT = ROOT + '/shots/'
+async def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else 'big'
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        pg = await b.new_page(viewport={'width': 390, 'height': 844}, device_scale_factor=2)
+        errs = []
+        pg.on('console', lambda m: errs.append(m.type + ': ' + m.text) if m.type in ('error',) else None)
+        pg.on('pageerror', lambda e: errs.append('PAGE: ' + str(e)))
+        await pg.goto('file://' + ROOT + '/out/index.html')
+        await pg.wait_for_timeout(1200)
+        if name == 'cost':
+            # 탑 한 모습(뒤, 앞 그림) 만드는 시간: 네 번 중 가장 빠른 값(잡음 제거), 칸 크기 72(배율 2)와 108(배율 3)
+            js = """(function(){ var ks=['archer','catapult','arcane','frost','ballista','bell','flame','alchemy','cannon','mint'], out={};
+              function run(S, forms, tag){ var best={}; for (var rep=0; rep<4; rep++){ __tw.reset(); ks.forEach(function(k){ forms.forEach(function(f){ var id=k+f[0]+(f[0]>=4?'AB'[f[1]]:''), a=performance.now(); __tw.spr(k,f[0],f[1],S); var d=performance.now()-a; if (best[id]==null||d<best[id]) best[id]=d; }); }); }
+                var tot=0, mx=0, w='', n=0; for (var id in best){ tot+=best[id]; n++; if(best[id]>mx){mx=best[id]; w=id;} } out[tag]='평균 '+(tot/n).toFixed(1)+'ms, 최대 '+mx.toFixed(1)+'ms ('+w+')'; }
+              [72,108].forEach(function(S){ run(S, [[1,0],[2,0],[3,0],[4,0],[5,0],[4,1],[5,1]], '1~5단계 S='+S); run(S, [[6,0],[6,1]], '6단계 S='+S); });
+              return out; })()"""
+            for sk in ('base', 'berry', 'star'):
+                await pg.evaluate("__td.SAVE().skin = __td.SAVE().skin || {}; __td.SAVE().skin.tower = '%s'; __tw.reset();" % sk)
+                r = await pg.evaluate(js); print('[스킨 %s]' % sk); [print('  ', k, v) for k, v in r.items()]
+            await pg.evaluate("__td.SAVE().skin.tower = 'base'; __tw.reset();")
+            # 전투 중 탑 하나를 한 프레임 그리는 시간(마이크로초): 몸체 그림 둘 / 움직이는 부분(쏘는 중) / 움직이는 부분(쉬는 중)
+            r = await pg.evaluate("""(function(){ var ks=['archer','catapult','arcane','frost','ballista','bell','flame','alchemy','cannon','mint'], out=[], S=72, c=document.createElement('canvas'); c.width=700; c.height=900; var x=c.getContext('2d'), sum=[0,0,0,0], n=0;
+              ks.forEach(function(k){ var row=(k+'        ').slice(0,9); [[3,0],[5,0],[6,0],[5,1],[6,1]].forEach(function(f){ row+=' | '+f[0]+'AB'[f[1]]; [1,2,3].forEach(function(mode){ var best=1e9; for (var rep=0; rep<4; rep++){ var d=__tw.one(x,k,f[0],f[1],S,90,mode); if (d<best) best=d; } var us=best*1000/90; row+=' '+(us|0); if (f[0]===6) sum[mode]+=us; }); if (f[0]===6) n++; }); out.push(row); });
+              out.push('6단계 평균(us): 몸체 '+(sum[1]/n|0)+', 움직임(쏘는 중) '+(sum[2]/n|0)+', 움직임(쉬는 중) '+(sum[3]/n|0)); return out; })()""")
+            print('탑 하나 한 프레임(us, S=72): 몸체 그림 둘 / 움직이는 부분(쏘는 중) / 움직이는 부분(쉬는 중)'); [print('  ', v) for v in r]
+        elif name == 'icons':
+            d = await pg.evaluate("""(function(){ var ks=['archer','catapult','arcane','frost','ballista','bell','flame','alchemy','cannon','mint'], px=%d, c=document.createElement('canvas'); c.width=px*10; c.height=px*4; var x=c.getContext('2d'); x.fillStyle='#fff6e8'; x.fillRect(0,0,c.width,c.height);
+              var n=0, done; return new Promise(function(res){ ks.forEach(function(k,i){ [[5,0],[6,0],[5,1],[6,1]].forEach(function(f,j){ var im=new Image(); n++; im.onload=function(){ x.drawImage(im,i*px,j*px); if(--n===0) res(c.toDataURL()); }; im.src=__tw.icon(k,f[0],f[1],px); }); }); }); })()""" % (int(sys.argv[2]) if len(sys.argv) > 2 else 72))
+            open(OUT + 'tw1_icons.png', 'wb').write(base64.b64decode(d.split(',')[1]))
+        else:
+            opt = sys.argv[2] if len(sys.argv) > 2 else '{}'
+            d = await pg.evaluate("__tw.sheet(%s)" % opt)
+            open(OUT + 'tw1_%s.png' % name, 'wb').write(base64.b64decode(d.split(',')[1]))
+        print('errors', len(errs))
+        for e in errs[:12]: print(e)
+        await b.close()
+asyncio.run(main())

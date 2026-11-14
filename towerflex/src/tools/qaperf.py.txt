@@ -1,0 +1,64 @@
+# QA 성능: python3 tools/qaperf.py [out/index.html 경로] [new|old]
+# new: 밤 규칙 판(c2s03)에 6단계 탑 20개 + 적 60마리, __td.prof(60)으로 한 프레임 그리기 시간(ms)
+# old: 1.3.1 귀염판(/home/claude/td4c13/out/index.html) 같은 크기 장면(5단계 탑 20개 + 적 60마리)
+import asyncio, sys, os, json
+from playwright.async_api import async_playwright
+PATH = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/out/index.html'
+MODE = sys.argv[2] if len(sys.argv) > 2 else 'new'
+SCENE = r"""(function(mode){
+  var g = __td.G(), cells = [], n = 0, ks;
+  for (var r = 1; r < g.rows - 1; r++) for (var c = 0; c < g.cols; c++) { var i = r * g.cols + c; if (g.kind[i] === 'g' && g.towerAt[i] < 0 && !(g.obsAt[i] >= 0 && g.obs[g.obsAt[i]].alive)) cells.push([c, r]); }
+  ks = mode === 'new' ? ['archer', 'flak', 'gatling', 'sam', 'laser', 'tesla', 'rocket', 'cannon', 'frost', 'flame'] : ['archer', 'catapult', 'arcane', 'frost', 'ballista', 'bell', 'flame', 'alchemy', 'cannon', 'mint'];
+  if (mode === 'new') g.towersOk = ks.slice();
+  for (var j = 0; j < cells.length && n < 20; j += Math.max(1, Math.floor(cells.length / 22))) {
+    g.gold = 1e7; var k = ks[n % ks.length], t = __td.build(k, cells[j][0], cells[j][1]); if (!t) continue; n++;
+    var L = mode === 'new' ? 6 : 5; t.lvl = L; t.br = n % 2;
+  }
+  if (typeof refreshStats === 'function') try { refreshStats(g); } catch (e) { }
+  var en = mode === 'new' ? ['zombie', 'ghoul', 'phantom', 'bats', 'witch', 'werewolf', 'gargoyle', 'pumpkin'] : ['goblin', 'orc', 'wolf', 'bat', 'knight', 'spider', 'skeleton', 'troll'];
+  var P = g.paths[0];
+  for (var q = 0; q < 60; q++) { var e = __td.fd ? __td.fd.spawn(en[q % en.length], 0, P.len * (0.05 + 0.85 * q / 60)) : null; if (!e && typeof spawnEnemy === 'function') spawnEnemy(g, en[q % en.length], 0, P.len * q / 60); }
+  return { towers: g.towers.length, enemies: g.enemies.length, rule: g.rule ? g.rule.id : null };
+})"""
+SCENE_OLD = r"""(function(){
+  var g = __td.G(), cells = [], n = 0, ks = ['archer', 'catapult', 'arcane', 'frost', 'ballista', 'bell', 'flame', 'alchemy', 'cannon', 'mint'];
+  for (var r = 1; r < 13; r++) for (var c = 0; c < 8; c++) { var i = r * 8 + c; if (g.kind[i] === 'g' && g.towerAt[i] < 0 && !(g.obsAt[i] >= 0 && g.obs[g.obsAt[i]].alive)) cells.push([c, r]); }
+  for (var j = 0; j < cells.length && n < 20; j++) { g.gold = 1e7; var t = __td.build(ks[n % 10], cells[j][0], cells[j][1]); if (t) { n++; t.lvl = 5; t.br = n % 2; } }
+  var en = ['goblin', 'orc', 'wolf', 'bat', 'knight', 'spider', 'skeleton', 'troll'], P = g.paths[0];
+  return { towers: g.towers.length };
+})"""
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        ctx = await b.new_context(viewport={'width': 360, 'height': 640}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        pg = await ctx.new_page(); errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)[:200]))
+        await pg.goto('file://' + PATH); await pg.wait_for_timeout(1500)
+        await pg.evaluate("try { var s=__td.SAVE(); s.tut.done=1; __td.unlockAll(); __td.ownAll && __td.ownAll(); } catch (e) {}")
+        mi = await pg.evaluate("(function(){var i = __td.MAPS.findIndex(function(m){return m.id==='c2s03'}); return i < 0 ? 8 : i;})()") if MODE == "new" else 2
+        await pg.evaluate("__td.start(%d,'normal')" % mi); await pg.wait_for_timeout(1500)
+        await pg.evaluate("__td.closeModal(); var s=document.getElementById('stSkip'); if (s && !document.getElementById('story').classList.contains('hide')) s.click();"); await pg.wait_for_timeout(600)
+        await pg.evaluate("__td.closeModal()")
+        info = await pg.evaluate(SCENE, MODE) if MODE == 'new' else None
+        if MODE == 'old':
+            # 옛 판에는 적 소환 고리가 없어 봇으로 첫 웨이브를 부른 뒤(탑 세우기 전) 나온 적을 얕게 복제해 60마리를 길 위에 고르게 놓음
+            await pg.evaluate("__td.bot(1)")
+            for i in range(60):
+                await pg.evaluate("__td.step(20)")
+                if await pg.evaluate("__td.G().enemies.length") >= 4: break
+            await pg.evaluate("__td.G().towers.slice().forEach(function(t){}); 1")
+            info = await pg.evaluate(SCENE_OLD)
+            await pg.evaluate("""(function(){var g=__td.G(), src=g.enemies.slice(), P=g.paths[0], id=9000; g.enemies.length=0;
+              for (var q=0;q<60;q++){ var o=src[q%src.length], e={}; for (var k in o) e[k]=o[k]; e.id=id++; e.d=P.len*(0.05+0.85*q/60); e.hp=e.mhp*50; g.enemies.push(e);} })()""")
+        if MODE == 'new': await pg.evaluate("__td.step(1)")
+        n = await pg.evaluate("__td.G().enemies.length")
+        r = await pg.evaluate("__td.prof(30)")
+        r2 = await pg.evaluate("__td.prof(60)")
+        if MODE == 'new' and '--low' in sys.argv:   # autoQuality가 켜는 낮은 효과(RD.lowFx, 입자 상한 360)
+            print('normal frame ms', round(r2['frame'], 2)); await pg.evaluate("__td.lowFx && __td.lowFx(1)"); r2 = await pg.evaluate("__td.prof(60)")
+        pc = await pg.evaluate("__td.pc ? __td.pc() : 0")
+        print(MODE, json.dumps(info), 'enemies', n, 'particles', pc)
+        print('frame ms', round(r2['frame'], 2), 'bg', round(r2['bg'], 2), {k: v for k, v in r2.items() if k not in ('frame', 'bg') and v > 0.3})
+        print('errors', errs[:5])
+        await b.close()
+asyncio.run(main())
