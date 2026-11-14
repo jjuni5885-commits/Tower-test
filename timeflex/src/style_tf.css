@@ -1,0 +1,105 @@
+/* ===== style_tf.css : 타임플렉스 화면 (판 창의 탑 규칙 고르기) ===== */
+.tfMode { display: flex; align-items: stretch; gap: 5px; margin: 8px 0 0; }
+.tfMode .sub { flex: 0 0 auto; align-self: center; font-size: 12px; margin-right: 2px; writing-mode: horizontal-tb; }
+.tfMode .tfMb { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 4px 4px; border-radius: 12px; background: #fff; border: 2px solid var(--lilac2, #d9c8f2); box-shadow: 0 3px 0 #e3d6f7; color: var(--ink, #3a2350); font-family: 'CUTE', 'PRT', sans-serif; }
+.tfMode .tfMb b { font-size: 15px; font-weight: 400; line-height: 1.15; }
+.tfMode .tfMb i { font-style: normal; font-family: 'PRT', sans-serif; font-size: 11px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tfMode .tfMb.on { background: linear-gradient(180deg, #6fe6f2, #27b6c8); border-color: #fff; box-shadow: 0 3px 0 #13808e, 0 0 0 2px #5ff0ff; color: #fff; text-shadow: 0 1px 0 rgba(10, 80, 90, 0.6); }
+.tfMode .tfMb.on i { color: #f2ffff; }
+/* 장이 15개라 장 고르기는 스크롤 목록으로 (카드 높이 고정) */
+#chSel { justify-content: flex-start; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+#chSel .chCard { flex: 0 0 auto; height: 126px; min-height: 126px; }
+#chSel .chCard.locked { height: 92px; min-height: 92px; }
+@media (max-height: 640px) { #chSel .chCard { height: 108px; min-height: 108px; } #chSel .chCard.locked { height: 90px; min-height: 90px; } }
+#chSel .chCard.locked .ccT span { display: none; }
+.tfTip { margin: 6px 0 0; padding: 5px 10px; border-radius: 12px; background: #fff7e0; border: 2px solid #f3c45a; color: #5a3a10; font-size: 13px; }
+.tfTip summary { font-family: 'CUTE', 'PRT', sans-serif; font-size: 14px; cursor: pointer; }
+.tfTip span { display: block; line-height: 1.4; padding-left: 4px; }
+.tfTip span::before { content: '- '; }
+/* 웨이브 알림: 자두빛 테두리와 분홍 그림자 대신 먹빛 테두리와 청동 그림자 */
+#banner .b1 { color: #fff4dc; filter: drop-shadow(3px 0 0 #1e140c) drop-shadow(-3px 0 0 #1e140c) drop-shadow(0 3px 0 #1e140c) drop-shadow(0 -3px 0 #1e140c) drop-shadow(0 4px 0 #9a6a2a) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35)); }
+#banner .b2 { background: rgba(30, 20, 12, 0.88); color: #f6e6c4; box-shadow: 0 3px 0 #9a6a2a; }
+/* 능력 고르기 카드: 분홍, 보라 대신 시대 화면 색(청동, 쇠, 금) */
+.pkc { --rc: #a8a882; --rd: #6e7650; filter: drop-shadow(0 4px 0 rgba(30, 20, 12, 0.25)); }
+.pkc.r1 { --rc: #8a9ac0; --rd: #4e5e88; } .pkc.r2 { --rc: #e8c050; --rd: #a87a10; }
+.pkI { background: linear-gradient(180deg, var(--ch-panel2, #fffaf0) 0%, var(--ch-panel, #f8f0dc) 100%); }
+.pkN { background: linear-gradient(180deg, var(--ch-btn2, #e8705a), var(--ch-btn, #c8402e)); color: var(--ch-btn-ink, #fff6e0); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); font-family: var(--ch-font, 'CUTE'); }
+.pkCombo { background: linear-gradient(180deg, #e8a82a, #b8302a); border-color: #fff4dc; font-family: var(--ch-font, 'CUTE'); }
+.abBox { background: radial-gradient(circle at 50% 40%, #fffaf0 0%, #eee6cc 70%, #dcd0a8 100%); border-color: #a8a882; box-shadow: 0 3px 0 #6e7650; }
+.abBox.r1 { background: radial-gradient(circle at 50% 40%, #ffffff 0%, #e6ebf4 70%, #cfd8e8 100%); border-color: #8a9ac0; box-shadow: 0 3px 0 #4e5e88; }
+.abBox.r2 { background: radial-gradient(circle at 50% 40%, #fffaf0 0%, #fbeec0 70%, #f0d888 100%); border-color: #e8c050; box-shadow: 0 3px 0 #a87a10; }
+.pkRib span { font-family: var(--ch-font, 'CUTE'); }
+/* 전투 위 막대: 테두리를 금, 붉은 쇠, 쇳빛으로 */
+.stat.gold, .mtop .stat { border-color: #c8a040; }
+.stat.life { border-color: #4fb8d0; }
+.stat.wave { border-color: #6a7480; }
+.stat.gem { border-color: #6aa8c8; }
+/* 새로운 적 카드: 분홍, 보라 배경 대신 먹빛과 양피지 */
+.ecard .etag, .weak .wk { background: linear-gradient(180deg, #c8584a, #8a2a22); font-family: var(--ch-font, 'CUTE'); }
+.ecard img { background: radial-gradient(circle, #fffaf0 0%, #efe4c8 45%, #dccfae 70%, rgba(220, 207, 174, 0) 71%); }
+.ecard .est { background: #efe6d0; }
+.weak .wT { border-color: #c8b890; }
+/* 소환권 칩, 보상 칩: 분홍, 민트 대신 양피지와 청동 */
+.stat.tk { border-color: #c8a060; }
+.rgain.tk { background: #f6eedc; border-color: #c8a060; }
+.rgain.rw { background: #eef2e6; border-color: #8aa070; }
+.rgain.rw small { background: #6a7a4a; }
+.rhint { background: #efe6d0; }
+/* v1.0 배포 정리: 귀염판에서 남은 분홍, 라일락을 양피지, 청동, 붉은 쇠로 (장별 화면 색 body[data-ch]는 그대로 위에서 덮음) */
+:root { --pink: #e2cfa6; --pink2: #d4b27a; --hot: #c8402e; --hotd: #8a2218; --lilac: #d8c8a4; --lilac2: #e3d6bd; --lilacd: #c4b088; --line: #e3d6bd; --csh: rgba(70, 50, 25, 0.22); }
+html, body { background: #1e170f; }
+.dot { background: #e0402e; box-shadow: 0 0 0 2px rgba(224, 64, 46, 0.3); }
+.bnFab .dot { background: #e0402e; }
+.chCard.c1 .ccNo { background: #e8a82a; }
+.gcStage { background: radial-gradient(circle at 50% 30%, #ffffff 0%, #f8f0dc 60%, #ecdfc0 100%); border-color: #dcc9a0; }
+.gcPity { color: #8a5a10; }
+.qItem.qBonus { border-color: #c8a060; background: #fffaf0; }
+.skc.sel, .tc.sel, .uc.sel, .ci.sel { border-color: #c8402e; background: #fff6e8; box-shadow: 0 3px 0 #d8b07a, 0 0 0 3px rgba(200, 64, 46, 0.2); }
+.ib.on { border-color: #d4b27a; background: #fff6e8; color: #8a2218; box-shadow: 0 3px 0 rgba(138, 34, 24, 0.35), 0 0 0 3px rgba(200, 64, 46, 0.15); }
+.ritem.can { border-color: #d4b27a; box-shadow: 0 3px 0 #d8b07a; }
+.tab.on { background: linear-gradient(180deg, #e8705a, #c8402e); }
+.btn.gold { background: linear-gradient(180deg, #f6d070 0%, #e8a82a 48%, #c88010 100%); }
+#bWave.pulse { background: linear-gradient(180deg, #f29a80 0%, #e8705a 50%, #c8402e 100%); }
+.sk.aim .face { box-shadow: 0 4px 0 var(--rd), 0 0 0 3px #fff, 0 0 0 6px #e8a82a, 0 0 20px rgba(232, 168, 42, 0.85); }
+#tut::before { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23e8a82a'/%3E%3Ccircle cx='12' cy='12' r='11' fill='none' stroke='%238a5a10' stroke-width='1.5'/%3E%3Cpath d='M12 6v7' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='17.5' r='1.8' fill='%23fff'/%3E%3C/svg%3E") center / contain no-repeat; }
+/* v1.0: 상점의 사탕 스킨(탑 스킨, 화살 스킨)은 숨기고 보석 받기만 남김 (meta.js metaFixSave가 기본 모양으로 되돌림) */
+.modal.shop .tabs.two, .modal.shop .skGrid, .modal.shop .skAct { display: none; }
+.modal.shop .adRow { margin-top: 10px; }
+/* v1.2: 우두머리 체력 막대(귀염판 분홍) → 붉은 쇠와 먹빛 */
+#bossbar .bn { background: linear-gradient(180deg, #a8342a, #6e1c16); border-color: #e8d6b0; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55); }
+#bossbar .bb { background: #2a1d17; border-color: #e8d6b0; box-shadow: 0 0 0 2px #6e1c16, 0 3px 0 2px rgba(0, 0, 0, 0.35); }
+#bossFill { background: linear-gradient(180deg, #ff8a5c 0%, #d8402a 55%, #9e2216 100%); }
+/* v1.2: 귀염판 분홍이 남은 칸들(장별 화면 색 body[data-ch]가 덮지 않는 곳) → 붉은 쇠, 청동, 양피지 */
+.enRow .en.bs { background: #f6e3c8; box-shadow: 0 0 0 2px #c8402e; }
+.adTag { background: #f6ead2; border-color: #d4b27a; }
+.rgain.tk { background: #fbf3e2; border-color: #d4b27a; }
+.stat.life { border-color: #d4b27a; }
+.stat.tk { border-color: #d4b27a; }
+#sk_last { --rc: #e8a06a; --rd: #a8542a; }
+.sk .face { background: radial-gradient(circle at 50% 30%, #ffffff 0%, #ffffff 48%, #f6ecd8 100%); }
+.uc strong { background: linear-gradient(180deg, #e8705a, #c8402e); }
+.tap { box-shadow: 0 5px 0 #c89a4a, 0 10px 18px rgba(60, 40, 20, 0.25); }
+.node .nb, .mnum { background: radial-gradient(circle at 50% 28%, #ffe6b0 0%, #e8a82a 52%, #b0700a 100%); }
+.srow i.on { background: linear-gradient(180deg, #e8705a, #c8402e); }
+.ecard img { background: radial-gradient(circle, #ffffff 0%, #fbf3e2 45%, #efe2c6 70%, rgba(239, 226, 198, 0) 71%); }
+.rgrid span { border-bottom-color: #e3d6bd; }
+#story .who { background: linear-gradient(180deg, #e8705a, #a8342a); }
+.skc em.eq, .pkN { background: linear-gradient(180deg, #e8705a, #c8402e); }
+.qBar i { background: linear-gradient(180deg, #f2c860, #c88010); }
+.adBar i { background: linear-gradient(90deg, #ffd23a, #e8705a); }
+.gcRes.b2 { background: radial-gradient(circle at 50% 40%, #fffdf0 0%, #fff3c4 60%, #f3e2c0 100%); }
+.gNew { background: linear-gradient(180deg, #e8705a, #c8402e); }
+#bWave .wi .wi1.mo { background: #f6e3c8; }
+#tray .uc.uBr[data-br="1"] > .uTag { background: #c8402e; }
+.uFz, .uUnl { background: linear-gradient(120deg, #e6eef2, #f6ead2 60%, #fff3cf); }
+.bnScore em { background: linear-gradient(180deg, #e8705a, #c8402e); }
+.mtBar i { background: linear-gradient(90deg, #ffb300, #c8402e); }
+body { --ub-acc: var(--ch-accent, #c8402e); --ub-line: var(--ch-line, #e3d6bd); }
+.t-l .gcap .ct { background: #f6e3c8; }
+/* v1.2: 깜빡임 테두리(전투 시작 버튼, 탭 안내, 피격)의 분홍 빛 → 금빛 */
+@keyframes wpulse { 50% { box-shadow: 0 4px 0 var(--hotd), 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(255, 196, 70, 0.55); } }
+@keyframes tapp { 50% { transform: scale(1.07); box-shadow: 0 5px 0 #c89a4a, 0 0 0 6px rgba(255, 255, 255, 0.55), 0 10px 22px rgba(200, 140, 40, 0.35); } }
+@keyframes hitp { 30% { border-color: #c8402e; box-shadow: 0 3px 0 var(--csh), 0 0 0 3px rgba(200, 64, 46, 0.45); transform: translateX(-3px); } 60% { transform: translateX(3px); } }
+#bWave.pulse .wl b { text-shadow: 0 2px 0 rgba(110, 30, 20, 0.5); }
+.bvT.on { background: #fbf3e2; box-shadow: 0 0 0 3px rgba(200, 64, 46, 0.2); }
+#tray .tc.sel { box-shadow: 0 3px 0 var(--ub-line), 0 0 0 3px rgba(200, 64, 46, 0.22); }
