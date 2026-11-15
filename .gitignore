@@ -1,3 +1,11 @@
 node_modules/
 timeflex/out/
 towerflex/out/
+timeflex/shorts/frames/
+timeflex/shorts/probe/
+timeflex/shorts/clips/
+timeflex/shorts/aud/
+timeflex/shorts/ex/
+timeflex/shorts/game.html
+timeflex/shorts/*.mp4
+timeflex/shorts/*.log

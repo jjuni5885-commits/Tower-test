@@ -1,0 +1,501 @@
+{
+ "hook": {
+  "mi": 55,
+  "towers": [
+   "turtle",
+   "singijeon",
+   "jangseung",
+   "shrine",
+   "singijeon"
+  ],
+  "n": 13,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "jo_raider",
+    8
+   ],
+   [
+    "jo_tiger",
+    3
+   ],
+   [
+    "jo_tal",
+    5
+   ],
+   [
+    "jo_crow",
+    4
+   ],
+   [
+    "jo_ship",
+    3
+   ],
+   [
+    "jo_fox",
+    4
+   ]
+  ],
+  "f0": 0.05,
+  "f1": 0.7,
+  "hpMul": 4,
+  "boss": "jo_imugi",
+  "bossF": 0.4,
+  "bossHp": 6,
+  "stream": [
+   "jo_raider",
+   "jo_tal",
+   "jo_fox",
+   "jo_crow",
+   "jo_ship"
+  ],
+  "every": 300,
+  "dur": 4.6,
+  "preroll": 1500,
+  "waves": 1
+ },
+ "m1": {
+  "mi": 6,
+  "towers": [
+   "sling",
+   "spear",
+   "bonfire",
+   "totem"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "caveman",
+    8
+   ],
+   [
+    "sabertooth",
+    4
+   ],
+   [
+    "mammoth",
+    3
+   ],
+   [
+    "ptero",
+    4
+   ],
+   [
+    "rhino",
+    3
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "mammothKing",
+  "bossF": 0.35,
+  "bossHp": 4,
+  "stream": [
+   "caveman",
+   "sabertooth",
+   "ptero",
+   "mammoth"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m2": {
+  "mi": 20,
+  "towers": [
+   "scorpio",
+   "onager",
+   "barracks"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "ro_legion",
+    10
+   ],
+   [
+    "ro_horse",
+    4
+   ],
+   [
+    "ro_eagle",
+    4
+   ],
+   [
+    "ro_eleph",
+    2
+   ],
+   [
+    "ro_glad",
+    3
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "ro_tyrant",
+  "bossF": 0.35,
+  "bossHp": 4,
+  "stream": [
+   "ro_legion",
+   "ro_horse",
+   "ro_eagle",
+   "ro_glad"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m3": {
+  "mi": 34,
+  "towers": [
+   "runestone",
+   "winterhorn"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "nr_raider",
+    8
+   ],
+   [
+    "nr_wolf",
+    5
+   ],
+   [
+    "nr_raven",
+    4
+   ],
+   [
+    "nr_troll",
+    2
+   ],
+   [
+    "nr_ship",
+    2
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "nr_giant",
+  "bossF": 0.35,
+  "bossHp": 4,
+  "stream": [
+   "nr_raider",
+   "nr_wolf",
+   "nr_raven",
+   "nr_ship"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m4": {
+  "mi": 48,
+  "towers": [
+   "fort",
+   "galleon"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "sa_pirate",
+    8
+   ],
+   [
+    "sa_parrot",
+    4
+   ],
+   [
+    "sa_shark",
+    3
+   ],
+   [
+    "sa_ship",
+    3
+   ],
+   [
+    "sa_ghostship",
+    2
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "sa_kraken",
+  "bossF": 0.35,
+  "bossHp": 4,
+  "stream": [
+   "sa_pirate",
+   "sa_parrot",
+   "sa_ship",
+   "sa_shark"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m5": {
+  "mi": 62,
+  "towers": [
+   "gatling",
+   "flak"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "tr_rifle",
+    8
+   ],
+   [
+    "tr_horse",
+    4
+   ],
+   [
+    "tr_plane",
+    4
+   ],
+   [
+    "tr_mk1",
+    3
+   ],
+   [
+    "tr_zep",
+    2
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "tr_landship",
+  "bossF": 0.35,
+  "bossHp": 4,
+  "stream": [
+   "tr_rifle",
+   "tr_plane",
+   "tr_mk1",
+   "tr_horse"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m6": {
+  "mi": 63,
+  "towers": [
+   "rocket",
+   "airbase",
+   "warship",
+   "gatling"
+  ],
+  "n": 13,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "st_rifle",
+    8
+   ],
+   [
+    "st_jeep",
+    4
+   ],
+   [
+    "st_fighter",
+    4
+   ],
+   [
+    "st_tank",
+    3
+   ],
+   [
+    "st_bomber",
+    2
+   ],
+   [
+    "st_landing",
+    3
+   ]
+  ],
+  "hpMul": 4,
+  "stream": [
+   "st_rifle",
+   "st_fighter",
+   "st_tank",
+   "st_landing",
+   "st_bomber"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m7": {
+  "mi": 91,
+  "towers": [
+   "laser",
+   "tesla",
+   "sam",
+   "rocket"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "cy_drone",
+    6
+   ],
+   [
+    "cy_bike",
+    5
+   ],
+   [
+    "cy_swarm",
+    5
+   ],
+   [
+    "cy_mech",
+    3
+   ],
+   [
+    "cy_tank",
+    2
+   ]
+  ],
+  "hpMul": 4,
+  "stream": [
+   "cy_drone",
+   "cy_bike",
+   "cy_swarm",
+   "cy_mech"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "m8": {
+  "mi": 104,
+  "towers": [
+   "orbital",
+   "laser",
+   "tesla",
+   "sam"
+  ],
+  "n": 12,
+  "lv": 6,
+  "speed": 1.3,
+  "army": [
+   [
+    "sp_grunt",
+    8
+   ],
+   [
+    "sp_hopper",
+    4
+   ],
+   [
+    "sp_saucer",
+    4
+   ],
+   [
+    "sp_walker",
+    3
+   ],
+   [
+    "sp_cruiser",
+    2
+   ]
+  ],
+  "hpMul": 4,
+  "boss": "sp_mother",
+  "bossF": 0.3,
+  "bossHp": 4,
+  "stream": [
+   "sp_grunt",
+   "sp_saucer",
+   "sp_hopper",
+   "sp_walker"
+  ],
+  "every": 300,
+  "dur": 2.8,
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "boss": {
+  "mi": 90,
+  "towers": [
+   "sam",
+   "mortar",
+   "sniper",
+   "rocket",
+   "gatling"
+  ],
+  "n": 13,
+  "lv": 6,
+  "speed": 1.2,
+  "army": [
+   [
+    "du_rifle",
+    8
+   ],
+   [
+    "du_jeep",
+    4
+   ],
+   [
+    "du_drone",
+    4
+   ],
+   [
+    "du_tank",
+    3
+   ],
+   [
+    "du_mech",
+    2
+   ]
+  ],
+  "hpMul": 3,
+  "boss": "du_king",
+  "bossF": 0.45,
+  "bossHp": 8,
+  "stream": [
+   "du_rifle",
+   "du_drone",
+   "du_jeep"
+  ],
+  "every": 300,
+  "dur": 7.5,
+  "events": [
+   [
+    3.0,
+    "const b=window.__boss; if(b&&!b.dead) b.hp=Math.min(b.hp,b.mhp*0.004);"
+   ]
+  ],
+  "f1": 0.7,
+  "waves": 1,
+  "preroll": 1500
+ },
+ "end": {
+  "title": 1,
+  "dur": 3.8
+ }
+}
